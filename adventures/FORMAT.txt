@@ -1,0 +1,80 @@
+THE ADVENTURE FILE FORMAT
+A plain .txt file. Any text file without "== SCENE" lines opens in reader mode instead.
+
+AT THE TOP
+  TITLE: The Name of Your Adventure
+  START: first_scene_id
+  AUTHOR: optional
+
+BLOCKS
+Each block starts with a line like  == SCENE: id  (also MONSTER, ITEM, TABLE).
+Ids are one word: letters, numbers, _ or -.
+
+== SCENE: well_yard
+  title: The Old Well Yard
+  area: wilds       wilds, marsh, dungeon, crypt, tower, town, none, or a TABLE id
+  rest: short       short, both (short and long), or none
+  back: Text shown when you come back here later.
+  Any other lines are the scene's text. A blank line starts a new paragraph.
+
+  * Label of a choice
+    if: flag, !flag, has item_id, gold>=10, level>=2   (all must be true)
+    once                      the choice disappears after you pick it
+    check: stealth 12         also: save dex 12 / str 12 / athletics or acrobatics 12
+                              / stealth vs goblin / athletics contest 5
+    pass: what happens on a success
+    fail: what happens on a failure
+    ...or effects directly on the choice:
+    text: Narration.
+    go: other_scene
+    gold: 5   or   gold: 2d6        xp: 50       heal: 1d8
+    item: potion   or   item: brass_lantern x2        take: brass_lantern
+    pay: 10                         insp            (gain Inspiration)
+    set: flag_name, other_flag      unset: flag_name
+    damage: 1d6 piercing            damage: 2d6 fire save dex 12 half
+    fight: goblin x2, wolf          surprise: player  or  surprise: enemy
+    ambush: 4  (hidden foes roll Stealth +4 against your passive Perception)
+    win: scene_id ; set: flag       flee: scene_id      noflee      rout: 1
+    shop: odda   (marta, odda, pell)
+    end          (marks the adventure complete)
+
+  pass: and fail: lines hold several effects separated by " ; "
+    pass: You find a purse. ; gold: 2d6 ; item: potion
+    fail: It hears you. ; fight: drowned_watcher ; win: well_end
+  A single word that matches a scene id means "go there":
+    pass: drowned_room
+
+== MONSTER: well_spider
+  Either paste a stat block after a line that says  statblock:
+  or write it out:
+  name: Well Spider
+  type: beast
+  ac: 13
+  hp: 11
+  xp: 50
+  pp: 10             passive Perception
+  init: 3            Dexterity modifier
+  attack: Bite +5 1d6+3 piercing      (one line per attack)
+  multi: 2           attacks per turn
+  saves: str+1 dex+3 con+1 int-4 wis+0 cha-3
+  special: pack, nimble, martial
+  vuln: radiant       immune: poison
+  Fights can also use core monsters (goblin, wolf, skeleton, orc...) and
+  anything in your Bestiary, by id or by name.
+
+== ITEM: brass_lantern
+  name: The Brass Lantern
+  desc: What it looks like.
+  heal: 2d4+2      (makes it a usable healing item)
+  insp: yes        (using it grants Inspiration)
+  ac: 1            (+1 AC while carried)
+  quest: yes
+  Core items work too: potion, poultice, ration, rope, torch, shield,
+  w_longsword (weapons start with w_), a_chainmail (armor starts with a_).
+
+== TABLE: well
+  One row per line:   range | label | text | effects
+  1-5 | Hostile | A spider drops on a silk line. | fight: well_spider
+  9-15 | Quiet | Water drips.
+  16-19 | Find | A coin in the moss. | gold: 1d6
+  Use it with  area: well  in a scene, then "Explore the area" rolls on it.

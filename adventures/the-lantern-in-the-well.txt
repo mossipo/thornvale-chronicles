@@ -1,0 +1,130 @@
+TITLE: The Lantern in the Well
+AUTHOR: Thornvale Chronicles sample one-shot
+START: well_yard
+
+This is a sample one-shot written in the Thornvale adventure format.
+Anything above the first == line, other than TITLE, START and AUTHOR, is ignored,
+so you can keep notes here.
+
+== MONSTER: well_spider
+statblock:
+Well Spider
+Medium beast, unaligned
+Armor Class 13 (natural armor)
+Hit Points 11 (2d8 + 2)
+Speed 30 ft., climb 30 ft.
+STR DEX CON INT WIS CHA
+12 (+1) 16 (+3) 12 (+1) 2 (-4) 11 (+0) 4 (-3)
+Skills Stealth +7
+Senses darkvision 60 ft., passive Perception 10
+Challenge 1/4 (50 XP)
+Actions
+Bite. Melee Weapon Attack: +5 to hit, reach 5 ft., one target. Hit: 6 (1d6 + 3) piercing damage.
+
+== MONSTER: drowned_watcher
+name: Drowned Watcher
+type: undead
+ac: 12
+hp: 22
+xp: 100
+pp: 9
+init: 1
+attack: Grasping Hand +4 1d8+2 bludgeoning
+saves: str+2 dex+1 con+2 int-3 wis-1 cha-3
+immune: poison
+vuln: radiant
+
+== ITEM: brass_lantern
+name: The Brass Lantern
+desc: An old miner's lantern that burns without oil. It is warm in your hands.
+quest: yes
+
+== TABLE: well
+1-5 | Hostile | A well spider drops out of the dark on a line of silk. | fight: well_spider
+6-8 | Hazard | Slick stones shift under your feet. | damage: 1d4 bludgeoning save dex 11 half
+9-15 | Quiet | Water drips. Far below, something splashes, then is still.
+16-19 | Find | A silver coin glints in the moss. | gold: 1d6
+20 | Blessing | A breath of warm air rises from below, smelling of summer. | insp
+
+== SCENE: well_yard
+title: The Old Well Yard
+area: wilds
+rest: short
+The farm at Copperfield Bend has stood empty for a year. Its well has not. Every night since the harvest, a light has burned at the bottom of it, and the farmer's widow, Ada Copperfield, wants to know why.
+
+A rope is still tied to the well's iron crank. Below, the shaft drops into darkness, and very far down something glows like a coal.
+back: The well yard is quiet. The rope still hangs down into the dark.
+
+* Ask Ada what she has seen
+  once
+  text: "Lights, and humming," Ada says. "Not words. Just humming, the way my husband hummed when he worked. He fell down that well, you know. Before the harvest."
+  set: heard_ada
+* Test the rope before you trust it
+  once
+  check: athletics 10
+  pass: The rope holds. It is newer than the crank it is tied to. Someone has been going up and down. ; xp: 10
+  fail: The rope holds, but you skin your palms finding that out. ; damage: 1 slashing
+* Climb down the rope
+  go: well_shaft
+
+== SCENE: well_shaft
+title: Down the Shaft
+area: well
+rest: short
+The shaft is slick with moss. Halfway down, the stones open into a dry side tunnel hung with webs as thick as wool. Below you, the glow grows brighter.
+back: The mossy shaft, the webbed side tunnel, and the glow below.
+
+* Cut through the webs into the side tunnel
+  if: !webs_cleared
+  fight: well_spider x2
+  win: well_shaft ; set: webs_cleared
+  flee: well_yard
+* Search the side tunnel
+  if: webs_cleared
+  once
+  check: investigation 11
+  pass: Wrapped in old silk you find a farmer's purse and a stoppered vial. ; gold: 2d6 ; item: potion
+  fail: Bones of rats and birds. Nothing else.
+* Climb down toward the light
+  check: athletics 11
+  pass: drowned_room
+  fail: The rope burns through your hands and you drop the last ten feet into cold water. ; damage: 1d6 bludgeoning ; go: drowned_room
+* Climb back up to the yard
+  go: well_yard
+
+== SCENE: drowned_room
+title: The Drowned Room
+area: none
+The bottom of the well opens into a stone room half full of black water. On a ledge sits a brass lantern burning with a steady golden light, though it holds no oil. Beside it, waist-deep in the water, stands a figure in a farmer's coat. Its face is grey, its eyes are milk-white, and it is humming.
+back: The drowned watcher stands beside the lantern, humming.
+
+* Hum his tune back to him
+  if: heard_ada
+  check: persuasion 13
+  pass: You hum the tune back. The figure goes still. For a moment something like a man looks out of its white eyes. It lifts the lantern and holds it out to you, then sinks slowly into the water and is gone. ; xp: 100 ; item: brass_lantern ; go: well_end
+  fail: The humming turns into a low, wet growl. ; fight: drowned_watcher ; noflee ; win: well_end
+* Strike before it turns around
+  check: stealth vs drowned_watcher
+  pass: It never hears you over the water. ; fight: drowned_watcher ; surprise: player ; win: well_end
+  fail: It turns. ; fight: drowned_watcher ; win: well_end
+* Climb back up the shaft
+  go: well_shaft
+
+== SCENE: well_end
+title: Copperfield Bend at Dawn
+area: none
+rest: both
+You climb out into the grey dawn. Ada Copperfield is waiting at the well with a shawl around her shoulders. When she sees the brass lantern, she sits down on the edge of the well and cries, and then she laughs, and then she asks you in for breakfast.
+
+* Take the lantern and give it to Ada
+  if: !has brass_lantern, !lantern_given
+  text: You lift the lantern from where it fell beside the watcher. It is still warm.
+  item: brass_lantern
+* Give the lantern to Ada
+  if: has brass_lantern
+  text: She holds it a long time. "He carried this into the mine every day for thirty years," she says. "Thank you for bringing him home." She presses five gold coins on you and will not take them back.
+  take: brass_lantern
+  gold: 5
+  xp: 50
+  set: lantern_given
+  end

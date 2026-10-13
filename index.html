@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Thornvale Chronicles</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Grenze+Gotisch:wght@500;700&family=Spectral:ital,wght@0,400;0,600;1,400&family=IBM+Plex+Mono:wght@400;600&display=swap">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <div class="brand">
+      <h1>Thornvale Chronicles</h1>
+      <span class="chapter" id="chapterLine">Chapter One &middot; The Marsh Road</span>
+    </div>
+    <nav class="menu" aria-label="Game">
+      <button class="mbtn" id="btnSave" type="button">Save</button>
+      <button class="mbtn" id="btnLoad" type="button">Load</button>
+      <button class="mbtn" id="btnLibrary" type="button">Library</button>
+      <button class="mbtn" id="btnTransfer" type="button">Transfer save</button>
+      <button class="mbtn" id="btnNew" type="button">New hero</button>
+    </nav>
+  </header>
+  <div class="notice" id="notice" role="status"></div>
+
+  <section class="panel inline-panel" id="confirmNew" hidden>
+    <b>Start over with a new hero?</b>
+    <span class="small" style="margin:0">Your current adventure is kept in the save slot until you save again.</span>
+    <div class="row"><button class="mbtn" id="newYes" type="button">Yes, new hero</button><button class="mbtn" id="newNo" type="button">Cancel</button></div>
+  </section>
+
+  <section class="panel inline-panel" id="transfer" hidden>
+    <b>Transfer save</b>
+    <span class="small" style="margin:0">Copy this code to move your hero to another device or page, or paste a code and press Import.</span>
+    <textarea id="transferText" spellcheck="false" aria-label="Save code"></textarea>
+    <div class="row">
+      <button class="mbtn" id="trCopy" type="button">Copy code</button>
+      <button class="mbtn" id="trImport" type="button">Import code</button>
+      <button class="mbtn" id="trClose" type="button">Close</button>
+    </div>
+  </section>
+
+  <section class="panel library" id="library" hidden>
+    <div class="libhead">
+      <b>Library</b>
+      <div class="seg" id="libTabs"><button type="button" data-lt="adv">Adventures</button><button type="button" data-lt="best">Bestiary</button><button type="button" data-lt="guide">File format</button></div>
+      <button class="mbtn" id="libClose" type="button">Close</button>
+    </div>
+    <div id="libBody" class="libbody"></div>
+  </section>
+
+  <main id="create" class="create" hidden></main>
+
+  <main id="play" class="play" hidden>
+    <section class="story">
+      <div class="where"><span class="nm" id="whereName"></span><span class="area" id="whereArea"></span></div>
+      <div class="status" id="status"></div>
+      <div class="log" id="log" aria-live="polite"></div>
+      <div class="combat" id="combat" hidden></div>
+      <div class="choices" id="choices"></div>
+      <div class="gm panel" id="gm" hidden></div>
+      <p class="hint">Press 1 to 9 on your keyboard to pick a choice.</p>
+    </section>
+    <aside class="sheet" id="sheet">
+      <div class="tabs" role="tablist">
+        <button class="tab" role="tab" data-tab="sheet" type="button">Sheet</button>
+        <button class="tab" role="tab" data-tab="pack" type="button">Pack</button>
+        <button class="tab" role="tab" data-tab="journal" type="button">Journal</button>
+        <button class="tab" role="tab" data-tab="map" type="button">Map</button>
+        <button class="tab" role="tab" data-tab="dice" type="button">Dice</button>
+      </div>
+      <div class="pane" id="pane"></div>
+    </aside>
+  </main>
+
+  <footer>
+    Thornvale Chronicles is an original adventure. This work includes material taken from the System Reference Document 5.1 ("SRD 5.1") by Wizards of the Coast LLC, available at
+    <a href="https://dnd.wizards.com/resources/systems-reference-document" target="_blank" rel="noopener">dnd.wizards.com/resources/systems-reference-document</a>.
+    The SRD 5.1 is licensed under the <a href="https://creativecommons.org/licenses/by/4.0/legalcode" target="_blank" rel="noopener">Creative Commons Attribution 4.0 International License</a>.
+  </footer>
+</div>
+
+<!-- Scripts load in this order. Later files use what earlier files define. -->
+<script src="js/rules.js"></script>
+<script src="js/monsters.js"></script>
+<script src="story/encounters.js"></script>
+<script src="story/story.js"></script>
+<script src="story/chapter1.js"></script>
+<script src="story/chapter2.js"></script>
+<script src="js/engine.js"></script>
+<script src="js/combat.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/sample-adventure.js"></script>
+<script src="js/library.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
