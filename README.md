@@ -18,7 +18,12 @@ Every time you change a file on GitHub, the website updates by itself within a m
 
 ## What is in the game
 
-* **Two chapters of story.** Chapter One: *The Marsh Road*, and Chapter Two: *The Sunken Shrine*. Both are original.
+* **Three chapters of story, all original:**
+  * Chapter One: *The Marsh Road* (suggested level 1)
+  * Chapter Two: *The Sunken Shrine* (level 2)
+  * Chapter Three: *The Saltreach Gaol* (level 3), a heist in a tidal-island prison with three cover identities, a suspicion meter, and an inside man to expose
+* **Start at any chapter** from the character creation screen. Your hero begins at that chapter's suggested level.
+* **Level scaling.** Fights scale to your hero: tougher when you are above a chapter's suggested level, a little weaker when you are below it. Turn it off in the Journal tab.
 * **Character creation** with four peoples, four classes, five backgrounds, standard array or 4d6, and your own backstory (type it or load a .txt file).
 * **PDF character sheet import** from a *fillable* 5e sheet: name, class and level, ability scores, hit points, XP, gold, weapons, and backstory.
 * **Equipment and shops.** Buy, sell, wear, and ready any SRD weapon or armor. If you aren't proficient with a weapon, your proficiency bonus doesn't add to the attack. Untrained armor gives disadvantage on Strength and Dexterity rolls and blocks spellcasting.
@@ -53,6 +58,7 @@ story/encounters.js        random encounter tables
 story/story.js             chapter names, area names, journal, lore
 story/chapter1.js          Chapter One: The Marsh Road
 story/chapter2.js          Chapter Two: The Sunken Shrine
+story/chapter3.js          Chapter Three: The Saltreach Gaol
 js/engine.js               dice, checks, rewards, hazards, outcomes, rests, saving
 js/combat.js               turns, attacks, spells, combat actions
 js/ui.js                   story log, choices, character sheet, character creation
@@ -84,10 +90,12 @@ Object.assign(STORY, {
 });
 ```
 
-To start Chapter Three:
-1. Make `story/chapter3.js` and add its `<script>` line to `index.html` after chapter2.
-2. Add the name to `CHAPTERS` in `story/story.js`, and its first scene to `CHAPTER_START` in `js/library.js`.
-3. Point the "Chapter Three" option in `chapter_end` (in `story/chapter2.js`) at your first scene.
+To start Chapter Four:
+1. Make `story/chapter4.js` and add its `<script>` line to `index.html` after chapter3.
+2. Add the name to `CHAPTERS` and its suggested level to `CHAPTER_LEVEL` in `story/story.js`, and its first scene to `CHAPTER_START` in `js/library.js`.
+3. Point the "Chapter Four" option in `c3_end` (in `story/chapter3.js`) at your first scene.
+
+`story/chapter3.js` is a good model for a quest with its own rules: it adds its own encounter table, journal entries, lore, an item, and a suspicion meter, all inside the one file.
 
 Choices, encounter results, and check results all use the same small set of keys:
 

@@ -289,8 +289,8 @@ const CHAPTER_TWO = {
       <br><br>"Three stones," she whispers. "The Dawnwardens built three shrines across the north. If someone is gathering the stones, then what the knights sealed away is not as sealed as we thought." She folds the letter carefully and looks up at you. "I think I will need you again."
       <br><br><b>Chapter Two: The Sunken Shrine is complete.</b>`,
     options:[
-      {label:'Chapter Three: The Greywater Ferry', tag:'Coming soon',
-       text:`This chapter has not been written yet. Builders: add new scenes to the STORY section of the code and point this option at the first one.`},
+      {label:'Chapter Three: The Saltreach Gaol', tag:'Suggested level 3', go:'c3_briefing',
+       text:`"Take the letter to Greywater," Hesta says. "There's a woman there who has spent her whole life catching people who don't want to be caught."`},
       {label:'Keep exploring the Thornvale', go:'trail'},
       {label:'Return to the inn', go:'bramblewick'}
     ]

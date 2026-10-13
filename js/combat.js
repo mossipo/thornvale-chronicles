@@ -17,6 +17,7 @@ function startCombat(cfg){
     counts[name] = (counts[name] || 0) + 1;
     return {uid:i, key:spec.key, base:name, name, hp, max:hp, ac:spec.ac || m.ac, m, st:{}, boss:!!spec.boss, xp:spec.xp || m.xp};
   });
+  scaleFoes(foes);
   foes.forEach(f => { if (counts[f.base] > 1){ const k = foes.filter(x => x.base === f.base).indexOf(f); f.name = `${f.base} ${'ABCDEF'[k]}`; } });
   G.mode = 'combat'; G.choices = null;
   const c = G.combat = {foes, cfg, round:1, target:0, phaseIdx:0, order:null, dodge:false, hidden:false, extra:false, bonusUsed:false, sneakUsed:false, surged:false, subdue:false, initial:foes.length, fled:false};
@@ -39,6 +40,26 @@ function startCombat(cfg){
   if (surprise === 'enemy'){ playerFirst = false; c.playerSkip = true; log('bad', 'You are surprised and lose your first turn!'); }
   c.order = playerFirst ? ['player', 'foes'] : ['foes', 'player'];
   runCombat();
+}
+/* Fights scale to the hero. Each level above a chapter's suggested level makes
+   foes tougher; each level below makes them a little weaker. */
+function scaleFoes(foes){
+  if (G.scaling === false || !G.char) return;
+  const sc = STORY[G.scene];
+  if (!sc || sc.module) return;
+  const rec = CHAPTER_LEVEL[sc.chapter];
+  if (!rec) return;
+  const diff = clamp(G.char.level - rec, -2, 8);
+  if (!diff) return;
+  const mult = diff > 0 ? 1 + 0.3 * diff : Math.max(0.5, 1 + 0.2 * diff);
+  foes.forEach(f => {
+    f.hp = f.max = Math.max(1, Math.round(f.hp * mult));
+    f.bonusHit = diff > 0 ? Math.floor(diff / 2) : -1;
+    f.bonusDmg = diff > 0 ? diff : Math.ceil(diff / 2);
+    if (diff >= 3) f.ac += Math.floor(diff / 3);
+    f.xp = Math.max(1, Math.round(f.xp * mult));
+  });
+  log('sys', `Fights here are tuned for level ${rec}. ${diff > 0 ? 'Your foes are tougher' : 'Your foes are a little weaker'} to match your level ${G.char.level} hero.`);
 }
 function alive(c=G.combat){ return c.foes.filter(f => f.hp > 0 && !f.st.turned && !f.st.fled); }
 function advancePhase(){
@@ -101,12 +122,13 @@ function enemyStrike(f, a, martialUsed){
   if (f.st.hidden){ adv = true; f.st.hidden = false; }
   if (c.dodge && !atAlly) dis = true;
   const r = monsterD20(adv, dis);
-  const total = r.nat + a.toHit, crit = r.nat === 20;
+  const toHit = a.toHit + (f.bonusHit || 0);
+  const total = r.nat + toHit, crit = r.nat === 20;
   const hit = crit || (r.nat !== 1 && total >= tAC);
-  log('roll', `${esc(f.name)} ${a.name} at ${atAlly ? esc(G.ally.name) : 'you'}: ${diceHTML(r)} ${sgn(a.toHit)} = <b>${total}</b> vs AC ${tAC} <em class="${hit ? 'no' : 'ok'}">${crit ? 'Critical hit!' : hit ? 'Hit' : 'Miss'}</em>`);
+  log('roll', `${esc(f.name)} ${a.name} at ${atAlly ? esc(G.ally.name) : 'you'}: ${diceHTML(r)} ${sgn(toHit)} = <b>${total}</b> vs AC ${tAC} <em class="${hit ? 'no' : 'ok'}">${crit ? 'Critical hit!' : hit ? 'Hit' : 'Miss'}</em>`);
   if (!hit) return martialUsed;
   const dr = rollDice(a.dmg, crit);
-  let n = dr.total, extra = '';
+  let n = Math.max(1, dr.total + (f.bonusDmg || 0)), extra = f.bonusDmg ? ` ${sgn(f.bonusDmg)} level scaling` : '';
   if (f.m.special.includes('martial') && allies && !martialUsed){ const m = rollDice('2d6', crit); n += m.total; extra = ` + Martial Advantage ${m.text}`; martialUsed = true; }
   if (atAlly){
     G.ally.hp = Math.max(0, G.ally.hp - n);

@@ -6,7 +6,9 @@
 'use strict';
 
 const STORY = {};
-const CHAPTERS = {1:'The Marsh Road', 2:'The Sunken Shrine', 3:'The Greywater Ferry'};
+const CHAPTERS = {1:'The Marsh Road', 2:'The Sunken Shrine', 3:'The Saltreach Gaol', 4:'The Greywater Ferry'};
+/* Suggested hero level for each chapter. Fights scale up or down from here. */
+const CHAPTER_LEVEL = {1:1, 2:2, 3:3, 4:4};
 const CH_WORD = ['', 'One', 'Two', 'Three', 'Four', 'Five'];
 
 const AREA_NAME = {town:'Settlement', wilds:'Wilderness', marsh:'Marsh', tower:'Hollowmere Tower', dungeon:'Shrine Halls', crypt:'Crypt', boss:'Lair'};

@@ -633,7 +633,7 @@ function renderGM(){
 }
 
 /* ---------- map ---------- */
-const CHAPTER_START = {1:'c1_greywater', 2:'bramblewick'};
+const CHAPTER_START = {1:'c1_greywater', 2:'bramblewick', 3:'c3_briefing'};
 function sceneLinks(id){
   const sc = STORY[id], out = new Set();
   if (!sc) return [];

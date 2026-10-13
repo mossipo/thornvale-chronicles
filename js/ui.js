@@ -31,14 +31,15 @@ function render(){
   if (creating){ renderCreate(); return; }
   const sc = STORY[G.scene];
   if (sc && sc.module) $('chapterLine').textContent = `One-shot · ${G.module ? G.module.title : 'Adventure'}`;
-  else if (sc){ const n = sc.chapter || 1; $('chapterLine').textContent = `Chapter ${CH_WORD[n] || n} · ${CHAPTERS[n] || ''}`; }
+  else if (sc){ const n = sc.chapter || 1; $('chapterLine').textContent = `Chapter ${CH_WORD[n] || n} · ${CHAPTERS[n] || ''}${CHAPTER_LEVEL[n] ? ` · Suggested level ${CHAPTER_LEVEL[n]}` : ''}`; }
   if (sc && sc.reader && READER && G.module){
     $('whereName').textContent = READER.sections[G.module.idx] ? READER.sections[G.module.idx].title : G.module.title;
     $('whereArea').textContent = `Section ${G.module.idx + 1} of ${READER.sections.length}`;
   } else {
     $('whereName').textContent = sc ? sc.title : '';
     const areaName = sc ? (AREA_NAME[sc.area] || (ENCOUNTERS[sc.area] ? ENCOUNTERS[sc.area].name : '')) : '';
-    $('whereArea').textContent = areaName + (sc && ENCOUNTERS[sc.area] && ENCOUNTERS[sc.area].alert && G.alert ? ` · Noise ${G.alert}` : '');
+    const tbl = sc && ENCOUNTERS[sc.area];
+    $('whereArea').textContent = areaName + (tbl && tbl.alertName ? ` · ${tbl.alertName} ${Math.min(5, G.alert || 0)} of 5` : tbl && tbl.alert && G.alert ? ` · Noise ${G.alert}` : '');
   }
   renderStatus();
   renderChoices();
@@ -124,7 +125,7 @@ function tagFor(ch){
   const info = checkInfo(ch);
   if (ch.contest) return `${info.tag} contest`;
   if (ch.vsFoes) return `${info.tag} vs Perception ${foesPP(ch.vsFoes)}`;
-  return `${info.tag} DC ${ch.dc}`;
+  return `${info.tag} DC ${typeof ch.dc === 'function' ? ch.dc(G) : ch.dc}`;
 }
 
 function renderCombat(){
@@ -332,9 +333,12 @@ function renderSheet(){
     h += `</div><div class="sh"><h4>Things you have learned</h4>`;
     const lore = LORE.filter(l => l.when(G));
     h += lore.length ? lore.map(l => `<p class="lore">${l.text}</p>`).join('') : `<p class="empty">Nothing yet. Ask questions, read walls, listen at doors.</p>`;
-    h += `</div><div class="sh"><h4>Progress</h4><div class="meta"><span>Places visited <b>${Object.keys(G.visits).length}</b></span><span>Noise <b>${G.alert}</b></span></div></div>`;
+    h += `</div><div class="sh"><h4>Progress</h4><div class="meta"><span>Places visited <b>${Object.keys(G.visits).length}</b></span><span>Noise <b>${G.alert}</b></span></div>
+      <label class="ck" style="margin-top:8px"><input type="checkbox" id="scaleToggle" ${G.scaling === false ? '' : 'checked'}> Scale fights to my level</label>
+      <p class="small" style="margin:4px 0 0">Each chapter has a suggested level. With scaling on, foes get tougher when you are above it and a little weaker when you are below it.</p></div>`;
     p.innerHTML = h;
     $('stEdit').addEventListener('click', () => { ui.editStory = !ui.editStory; renderSheet(); });
+    $('scaleToggle').addEventListener('change', e => { G.scaling = e.target.checked; notice(G.scaling ? 'Fights will scale to your level.' : 'Fights will use their written difficulty.'); autosave(); });
     if (ui.editStory){
       $('stFile').addEventListener('change', async e => {
         const f = e.target.files[0]; e.target.value = '';
@@ -383,7 +387,7 @@ function newHero(){
   clearModule();
   if (C.race === 'other') C.race = 'human';
   C.name = pick(NAMES[C.race]);
-  C.sel = null; C.fixed = null; C.imp = null; C.impReport = ''; C.raceName = null;
+  C.sel = null; C.fixed = null; C.imp = null; C.impReport = ''; C.raceName = null; C.startCh = 1; C.startLevel = 1;
   C.story = {text:'', trait:'', ideal:'', bond:'', flaw:''};
   assignByPriority();
   logEl.innerHTML = '';
@@ -424,6 +428,11 @@ function renderCreate(){
       </div>
       <aside class="preview">
         <div class="panel" id="cPreview" style="display:flex;flex-direction:column;gap:14px"></div>
+        <div class="panel" style="display:flex;flex-direction:column;gap:8px">
+          <span class="lbl2">Where to start</span>
+          <div class="seg" id="cStart">${Object.keys(CHAPTER_START).map(n => `<button type="button" data-ch="${n}">Chapter ${CH_WORD[n]}</button>`).join('')}</div>
+          <p class="small" id="cStartNote" style="margin:0"></p>
+        </div>
         <button type="button" class="go" id="cBegin">Begin the adventure</button>
         <button type="button" class="ghost" id="cContinue" hidden>Continue saved adventure</button>
       </aside>`;
@@ -438,6 +447,11 @@ function renderCreate(){
     });
     $('cReroll').addEventListener('click', () => { roll4d6(); C.sel = null; assignByPriority(); renderCreate(); });
     $('cBegin').addEventListener('click', begin);
+    $('cStart').addEventListener('click', e => {
+      const n = +e.target.dataset.ch; if (!n) return;
+      C.startCh = n; C.startLevel = CHAPTER_LEVEL[n] || 1;
+      renderCreate();
+    });
     $('cStText').addEventListener('input', e => { C.story.text = e.target.value.slice(0, 20000); });
     STORY_FIELDS.forEach(([k]) => $('cSt_' + k).addEventListener('input', e => { C.story[k] = e.target.value.slice(0, 200); }));
     $('cStFile').addEventListener('change', async e => {
@@ -477,6 +491,7 @@ function renderCreate(){
   if (C.fixed){
     $('cScores').innerHTML = ABILS.map(a => `<div class="score"><span class="l">${a.toUpperCase()}</span><span class="v">${C.fixed[a]}</span><span class="r">From sheet</span><span class="m">${sgn(mod(C.fixed[a]))}</span></div>`).join('');
     $('cContinue').hidden = !readSave();
+    renderStartPicker();
     renderPreview();
     return;
   }
@@ -492,7 +507,13 @@ function renderCreate(){
     renderCreate();
   }));
   $('cContinue').hidden = !readSave();
+  renderStartPicker();
   renderPreview();
+}
+function renderStartPicker(){
+  const n = C.startCh || 1;
+  $('cStart').querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.ch === n)));
+  $('cStartNote').textContent = `${CHAPTERS[n]}. ${n === 1 ? 'The beginning of the story.' : 'Jump ahead to test or replay it.'} Your hero starts at level ${C.imp ? (C.imp.level || 1) : (CHAPTER_LEVEL[n] || 1)}${C.imp ? ' from your sheet' : ''}, and fights scale to your level.`;
 }
 function renderPreview(){
   const ch = buildChar(C);
@@ -504,8 +525,18 @@ function begin(){
   G.char = migrateChar(buildChar(C));
   G.mode = 'explore';
   logEl.innerHTML = '';
-  log('sys', `Chapter One: The Marsh Road. ${esc(G.char.name)}, ${RACES[G.char.race].name} ${CLASSES[G.char.cls].name}, takes a job in Greywater.`);
-  goTo('c1_greywater');
+  const ch = C.startCh || 1;
+  if (ch >= 2){
+    joinAlly('brindle');
+    G.char.gold += 40 * (ch - 1);
+    Object.assign(G.flags, {set_out:true, delivered:true, jory_free:true, c1_done:true, c1_loot:true});
+  }
+  if (ch >= 3){
+    Object.assign(G.flags, {stone_returned:true, wren_free:true, wren_reported:true, chapter_done:true, got_stone:true});
+    addItem('letter');
+  }
+  log('sys', `Chapter ${CH_WORD[ch]}: ${CHAPTERS[ch]}. ${esc(G.char.name)}, level ${G.char.level} ${esc(G.char.raceName || RACES[G.char.race].name)} ${CLASSES[G.char.cls].name}, begins the story here.`);
+  goTo(CHAPTER_START[ch]);
   window.scrollTo(0, 0);
 }
 

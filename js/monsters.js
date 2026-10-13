@@ -28,7 +28,11 @@ const MONSTERS = {
   frog:     {name:'Giant Frog', ac:11, hp:18, xp:50, pp:12, init:1, type:'beast', special:[],
              save:{str:1,dex:1,con:0,int:-4,wis:-1,cha:-4}, attack:{name:'Bite', toHit:3, dmg:'1d6+1', type:'piercing'}},
   orc:      {name:'Orc', ac:13, hp:15, xp:100, pp:10, init:1, type:'humanoid', special:[],
-             save:{str:3,dex:1,con:3,int:-2,wis:0,cha:0}, attack:{name:'Greataxe', toHit:5, dmg:'1d12+3', type:'slashing'}}
+             save:{str:3,dex:1,con:3,int:-2,wis:0,cha:0}, attack:{name:'Greataxe', toHit:5, dmg:'1d12+3', type:'slashing'}},
+  guard:    {name:'Guard', ac:16, hp:11, xp:25, pp:12, init:1, type:'humanoid', special:[],
+             save:{str:1,dex:1,con:1,int:0,wis:0,cha:0}, attack:{name:'Spear', toHit:3, dmg:'1d6+1', type:'piercing'}},
+  thug:     {name:'Thug', ac:11, hp:32, xp:100, pp:10, init:0, type:'humanoid', special:['pack'], multi:2,
+             save:{str:2,dex:0,con:2,int:0,wis:0,cha:0}, attack:{name:'Mace', toHit:4, dmg:'1d6+2', type:'bludgeoning'}}
 };
 
 /* Companions who fight beside the hero. They act right after you each round. */

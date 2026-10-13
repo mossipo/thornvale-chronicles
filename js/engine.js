@@ -113,7 +113,7 @@ function buildChar(C){
     else { const alt = FALLBACK_SKILLS.find(x => !skills.includes(x)); if (alt) skills.push(alt); }
   });
   const imp = C.imp || {};
-  const level = clamp(parseInt(imp.level, 10) || 1, 1, 20);
+  const level = clamp(parseInt(imp.level, 10) || C.startLevel || 1, 1, 20);
   const perLevel = Math.floor(c.hd / 2) + 1 + mod(abil.con) + (race.hpPerLevel || 0);
   const calcHp = Math.max(1, c.hd + mod(abil.con) + (race.hpPerLevel || 0) + (level - 1) * Math.max(1, perLevel));
   const maxHp = imp.hp > 0 ? imp.hp : calcHp;
@@ -222,7 +222,8 @@ function doCheck(ch){
   if (!armorTrained() && (abilUsed === 'str' || abilUsed === 'dex')){ dis = true; extra += ' Untrained armor: disadvantage.'; }
   if (chosen === 'stealth' && wornArmor() && wornArmor().stealthDis){ dis = true; extra += ` ${wornArmor().name}: disadvantage on Stealth.`; }
   if (skills.includes('perception') && allyUp() && ALLIES[G.ally.key].keen){ adv = true; extra = ` ${esc(G.ally.name)}'s nose helps.`; }
-  let dc = ch.dc, vs = `DC ${ch.dc}`;
+  const baseDC = typeof ch.dc === 'function' ? ch.dc(G) : ch.dc;
+  let dc = baseDC, vs = `DC ${baseDC}`;
   if (ch.vsFoes){ dc = foesPP(ch.vsFoes); vs = `passive Perception ${dc}`; }
   if (ch.contest){ const o = d(20), t = o + ch.contest.mod; dc = t + 1; vs = `${esc(ch.contest.name)}'s d20 ${o} ${sgn(ch.contest.mod)} = <b>${t}</b>`; }
   const r = d20test({mod:info.mod, adv, dis});
@@ -381,7 +382,7 @@ function resolve(o){
   if (o.choices){ G.choices = o.choices; render(); return; }
   if (o.shop && SHOPS[o.shop]){ G.shop = o.shop; render(); return; }
   if (o.fight){ startCombat(typeof o.fight === 'function' ? o.fight(G) : o.fight); return; }
-  if (o.go){ goTo(o.go); return; }
+  if (o.go){ goTo(typeof o.go === 'function' ? o.go(G) : o.go); return; }
   render();
 }
 function chooseOption(opt){
@@ -420,7 +421,7 @@ function wander(){
   const raw = d(20), shift = table.alert ? G.alert : 0, n = clamp(raw - shift, 1, 20);
   if (table.alert) G.alert = Math.min(6, G.alert + 1);
   const row = table.rows.find(r => n >= r.range[0] && n <= r.range[1]) || {label:'Quiet', pick:[{text:`Nothing stirs.`}]};
-  log('roll', `Encounter roll: d20 <b>${raw}</b>${shift ? ` minus ${shift} for noise` : ''} = <b>${n}</b> <em class="${row.label === 'Hostile' || row.label === 'Trap' || row.label === 'Hazard' ? 'no' : 'ok'}">${row.label}</em>`);
+  log('roll', `Encounter roll: d20 <b>${raw}</b>${shift ? ` minus ${shift} for ${(table.alertName || 'noise').toLowerCase()}` : ''} = <b>${n}</b> <em class="${row.label === 'Hostile' || row.label === 'Trap' || row.label === 'Hazard' ? 'no' : 'ok'}">${row.label}</em>`);
   const pool = row.pick.filter(o => !o.once || !G.flags['once_' + o.once]);
   if (row.label === 'Hostile') BESTIARY.filter(m => (m.areas || []).includes(sc.area)).forEach(m => pool.push({text:`A ${esc(m.name)} appears!`, fight:{foes:['my_' + m.id]}}));
   const o = pool.length ? pick(pool) : {text:`You search carefully, but find nothing new.`};
