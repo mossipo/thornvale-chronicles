@@ -31,6 +31,7 @@ function render(){
   if (creating){ renderCreate(); return; }
   const sc = STORY[G.scene];
   if (sc && sc.module) $('chapterLine').textContent = `One-shot · ${G.module ? G.module.title : 'Adventure'}`;
+  else if (sc && typeof chapterLabel === 'function' && chapterLabel(sc)) $('chapterLine').textContent = chapterLabel(sc);
   else if (sc){ const n = sc.chapter || 1; $('chapterLine').textContent = `Chapter ${CH_WORD[n] || n} · ${CHAPTERS[n] || ''}${CHAPTER_LEVEL[n] ? ` · Suggested level ${CHAPTER_LEVEL[n]}` : ''}`; }
   if (sc && sc.reader && READER && G.module){
     $('whereName').textContent = READER.sections[G.module.idx] ? READER.sections[G.module.idx].title : G.module.title;
@@ -39,7 +40,7 @@ function render(){
     $('whereName').textContent = sc ? sc.title : '';
     const areaName = sc ? (AREA_NAME[sc.area] || (ENCOUNTERS[sc.area] ? ENCOUNTERS[sc.area].name : '')) : '';
     const tbl = sc && ENCOUNTERS[sc.area];
-    $('whereArea').textContent = areaName + (tbl && tbl.alertName ? ` · ${tbl.alertName} ${Math.min(5, G.alert || 0)} of 5` : tbl && tbl.alert && G.alert ? ` · Noise ${G.alert}` : '');
+    $('whereArea').textContent = areaName + (sc && (sc.city || sc.job) ? ` · Standing: ${repName()}` : '') + (tbl && tbl.alertName ? ` · ${tbl.alertName} ${Math.min(5, G.alert || 0)} of 5` : tbl && tbl.alert && G.alert ? ` · Noise ${G.alert}` : '');
   }
   renderStatus();
   renderChoices();
@@ -72,6 +73,7 @@ function renderChoices(){
   cb.hidden = G.mode !== 'combat';
   if (G.mode === 'combat'){ renderCombat(); return; }
   if (G.mode === 'explore' && G.shop && SHOPS[G.shop]){ renderShop(box); return; }
+  if (G.mode === 'explore' && G.forge){ renderForge(box); return; }
 
   const list = [];
   if (G.mode === 'downed'){
@@ -80,7 +82,7 @@ function renderChoices(){
     list.push(btn('Load your last save', null, () => { const s = readSave(); if (!loadState(s)) notice('No save found.'); }));
     list.push(btn('Create a new hero', null, newHero));
   } else if (G.choices){
-    G.choices.filter(optionVisible).forEach(o => list.push(btn(o.label, o.tag || (o.check ? tagFor(o.check) : null), () => chooseOption(o))));
+    G.choices.filter(optionVisible).forEach(o => list.push(btn(resolveText(o.label), o.tag || (o.check ? tagFor(o.check) : null), () => chooseOption(o))));
   } else {
     const sc = STORY[G.scene];
     if (sc.reader && READER && G.module){
@@ -89,12 +91,13 @@ function renderChoices(){
       if (i > 0) list.push(btn(`Go back: ${secs[i - 1].title}`, null, () => { log('you', 'Go back'); showSection(i - 1); }));
       list.push(btn('Read this section again', null, () => showSection(i)));
     }
-    sc.options.filter(optionVisible).forEach(o => list.push(btn(o.label, o.tag || (o.check ? tagFor(o.check) : null), () => chooseOption(o))));
+    sc.options.filter(optionVisible).forEach(o => list.push(btn(resolveText(o.label), o.tag || (o.check ? tagFor(o.check) : null), () => chooseOption(o))));
     const gen = [];
     if (G.captive && CAPTIVES[G.captive]) gen.push(btn(`Question your captive ${CAPTIVES[G.captive].name}`, 'Captive', () => {
       const id = G.captive; G.captive = null; log('you', `Question the captive ${esc(CAPTIVES[id].name)}`); resolve(CAPTIVES[id].talk);
     }, {general:true}));
     if (ENCOUNTERS[sc.area]) gen.push(btn('Explore the area', 'Random encounter', wander, {general:true}));
+    if (G.job && JOBS[G.job.id]) gen.push(btn(`Quit the job: ${JOBS[G.job.id].title}`, 'No pay, no penalty', () => { log('you', 'Quit the job'); quitJob(); }, {general:true}));
     if (sc.rest === 'short' || sc.rest === 'both') gen.push(btn('Take a short rest', `Hit Dice ${G.char.hd.left}/${G.char.hd.max}`, shortRest, {general:true}));
     if (sc.rest === 'both') gen.push(btn('Take a long rest', 'Full recovery', longRest, {general:true}));
     if (!(G.module && G.module.reader)) gen.push(btn(ui.gm ? 'Hide the solo GM tools' : 'Open the solo GM tools', 'Checks, fights, rewards', () => { ui.gm = !ui.gm; render(); }, {general:true}));
@@ -165,12 +168,12 @@ function renderCombat(){
   const groups = [];
   const attacks = weapons().map((w, i) => ({label:w.name, sub:`${sgn(atkBonus(w))} to hit · ${w.dmg}${sgn(wAbil(w) + (w.bonus || 0))}${w.prof ? '' : ' · not proficient'}`, fn:() => playerAttack(i)}));
   groups.push(['Attack', attacks]);
-  const c2 = cls();
+  const c2 = cls(), known = knownSpells();
   if (c2.cast){
     const magic = [];
     const blocked = !armorTrained();
-    (c2.cantrips || []).forEach(id => magic.push({label:SPELLS[id].name, sub:blocked ? 'Blocked by untrained armor' : 'Cantrip · ' + SPELLS[id].desc.split('.')[0], fn:() => castSpell(id), cls:'magic', off:blocked}));
-    (c2.spells || []).forEach(id => {
+    known.cantrips.forEach(id => magic.push({label:SPELLS[id].name, sub:blocked ? 'Blocked by untrained armor' : 'Cantrip · ' + SPELLS[id].desc.split('.')[0], fn:() => castSpell(id), cls:'magic', off:blocked}));
+    known.spells.forEach(id => {
       magic.push({label:SPELLS[id].name, sub:blocked ? 'Blocked by untrained armor' : `1 slot (${ch.slots.left} left)`, fn:() => castSpell(id), cls:'magic', off:ch.slots.left <= 0 || blocked});
       if (SPELLS[id].kind === 'heal' && G.ally && G.ally.hp < G.ally.max) magic.push({label:`${SPELLS[id].name} on ${G.ally.name}`, sub:`1 slot · can revive a downed companion`, fn:() => castSpell(id, true), cls:'magic', off:ch.slots.left <= 0 || blocked});
     });
@@ -184,8 +187,11 @@ function renderCombat(){
   other.push({label:'Hide', sub:(cunning ? 'Bonus · ' : '') + 'Stealth vs their Perception; next attack has advantage', fn:hideAction, cls:cunning ? 'bonus' : '', off:cunning && c.bonusUsed});
   other.push({label:'Dodge', sub:'Attacks on you have disadvantage', fn:dodgeAction});
   const fast = hasFeat('fastHands');
-  ['potion', 'poultice', 'candle'].forEach(id => {
-    if (!has(id)) return;
+  Object.keys(ch.inv).filter(id => ITEMS[id] && ITEMS[id].use && ch.inv[id] > 0 && !(ITEMS[id].use === 'escape' && c.cfg.noFlee)).forEach(id => {
+    if (ITEMS[id].use === 'scroll'){
+      other.push({label:ITEMS[id].name, sub:`Use · ${SPELLS[ITEMS[id].spell] ? SPELLS[ITEMS[id].spell].desc.split('.')[0] : ''} · ${ch.inv[id]} left`, fn:() => itemAction(id), cls:'magic'});
+      return;
+    }
     other.push({label:ITEMS[id].name, sub:`${fast ? 'Bonus' : 'Use'} · ${ch.inv[id]} left`, fn:() => itemAction(id), cls:fast ? 'bonus' : '', off:fast && c.bonusUsed});
     if (ITEMS[id].use === 'heal' && G.ally && G.ally.hp < G.ally.max) other.push({label:`Give ${G.ally.name} a ${ITEMS[id].name}`, sub:`${fast ? 'Bonus' : 'Use'} · revives ${pron(ALLIES[G.ally.key], 'o')} if down`, fn:() => itemAction(id, true), cls:fast ? 'bonus' : '', off:fast && c.bonusUsed});
   });
@@ -231,7 +237,8 @@ function sheetCore(ch, preview){
     const slots = ch.slots;
     h += `<div class="sh"><h4>Spells <span>DC ${spellDC(ch)} · ${sgn(spellAtk(ch))} to hit</span></h4>`;
     h += `<div class="meta" style="margin-bottom:4px"><span>Level 1 slots</span><span class="pips">${Array.from({length:slots.max}, (_, i) => `<i class="pip${i < slots.left ? ' on' : ''}"></i>`).join('')}</span></div>`;
-    [...(c.cantrips || []), ...(c.spells || [])].forEach(id => {
+    const kn = knownSpells(ch);
+    [...kn.cantrips, ...kn.spells].forEach(id => {
       const sp = SPELLS[id];
       const castBtn = !preview && sp.kind === 'heal' ? `<button type="button" class="mini" data-cast="${id}" ${G.mode !== 'explore' || slots.left <= 0 || ch.hp >= ch.maxHp ? 'disabled' : ''}>Cast</button>` : '';
       h += `<div class="feat"><div class="ft"><span>${sp.name} <span style="font:12px var(--mono);color:var(--muted)">${sp.level ? 'Level 1' : 'Cantrip'}</span></span>${castBtn}</div><p>${sp.desc}</p></div>`;
@@ -257,7 +264,7 @@ function sheetCore(ch, preview){
 function companionHTML(){
   if (!G.ally) return '';
   const a = ALLIES[G.ally.key], hurt = G.ally.hp < G.ally.max, ok = G.mode === 'explore';
-  const cure = (cls().spells || []).find(id => SPELLS[id].kind === 'heal');
+  const cure = cls().cast ? knownSpells().spells.find(id => SPELLS[id].kind === 'heal') : null;
   const pct = clamp(G.ally.hp / G.ally.max * 100, 0, 100);
   return `<div class="comp"><div class="ct"><b>${esc(G.ally.name)}</b><span class="lbl2">Companion · ${a.kind}</span></div>
     <div class="hpbox"><div class="top2"><span class="lbl2">Hit points</span><span><b>${G.ally.hp}</b> / ${G.ally.max}</span></div><div class="bar me${pct <= 35 ? ' low' : ''}"><i style="width:${pct}%"></i></div></div>
@@ -315,7 +322,7 @@ function renderSheet(){
           if (!cls().prof.armor.includes('shield')) chips += ' <span class="chip warn">Untrained</span>';
           act = `<button type="button" class="mini" data-shd="1" ${ok ? '' : 'disabled'}>${on ? 'Take off' : 'Strap on'}</button>`;
         } else if (it.use){
-          const can = ok && !(it.use === 'heal' && ch.hp >= ch.maxHp) && !(it.use === 'insp' && ch.insp);
+          const can = ok && !(it.use === 'heal' && ch.hp >= ch.maxHp) && !(it.use === 'insp' && ch.insp) && it.use !== 'escape' && !(it.use === 'scroll' && !(SPELLS[it.spell] && SPELLS[it.spell].kind === 'heal' && ch.hp < ch.maxHp));
           act = `<button type="button" class="mini" data-use="${id}" ${can ? '' : 'disabled'}>Use</button>`;
         }
         if (it.quest) chips += ' <span class="chip">Quest</span>';
@@ -336,11 +343,11 @@ function renderSheet(){
     let h = `<div class="sh"><h4>Your story <button type="button" class="mini" id="stEdit" ${G.mode === 'create' ? 'disabled' : ''}>${ui.editStory ? 'Cancel' : 'Edit'}</button></h4>`;
     h += ui.editStory ? `<div class="fgrid" style="grid-template-columns:1fr">${storyFormHTML(st, 'st')}</div><div class="row" style="margin-top:8px"><button type="button" class="ghost" id="stSave">Save story</button></div>` : storyViewHTML(st);
     h += `</div><div class="sh"><h4>Quests</h4>`;
-    JOURNAL.filter(q => q.shown(G)).forEach(q => { const done = q.done(G); h += `<div class="quest${done ? ' done' : ''}"><span class="box"></span><span>${q.text}</span></div>`; });
+    JOURNAL.filter(q => q.shown(G)).forEach(q => { const done = q.done(G); h += `<div class="quest${done ? ' done' : ''}"><span class="box"></span><span>${typeof q.text === 'function' ? q.text(G) : q.text}</span></div>`; });
     h += `</div><div class="sh"><h4>Things you have learned</h4>`;
     const lore = LORE.filter(l => l.when(G));
     h += lore.length ? lore.map(l => `<p class="lore">${l.text}</p>`).join('') : `<p class="empty">Nothing yet. Ask questions, read walls, listen at doors.</p>`;
-    h += `</div><div class="sh"><h4>Progress</h4><div class="meta"><span>Places visited <b>${Object.keys(G.visits).length}</b></span><span>Noise <b>${G.alert}</b></span></div>
+    h += `</div><div class="sh"><h4>Progress</h4><div class="meta"><span>Places visited <b>${Object.keys(G.visits).length}</b></span><span>Noise <b>${G.alert}</b></span><span>Standing in Aldermere <b>${repName()} (${G.rep || 0})</b></span><span>Jobs done <b>${jobsDone()}</b></span></div>
       <label class="ck" style="margin-top:8px"><input type="checkbox" id="scaleToggle" ${G.scaling === false ? '' : 'checked'}> Scale fights to my level</label>
       <p class="small" style="margin:4px 0 0">Each chapter has a suggested level. With scaling on, foes get tougher when you are above it and a little weaker when you are below it.</p></div>`;
     p.innerHTML = h;
@@ -437,7 +444,7 @@ function renderCreate(){
         <div class="panel" id="cPreview" style="display:flex;flex-direction:column;gap:14px"></div>
         <div class="panel" style="display:flex;flex-direction:column;gap:8px">
           <span class="lbl2">Where to start</span>
-          <div class="seg" id="cStart">${Object.keys(CHAPTER_START).map(n => `<button type="button" data-ch="${n}">Chapter ${CH_WORD[n]}</button>`).join('')}</div>
+          <div class="seg" id="cStart">${Object.keys(CHAPTER_START).filter(n => /^\d+$/.test(n)).map(n => `<button type="button" data-ch="${n}">Chapter ${CH_WORD[n]}</button>`).join('')}<button type="button" data-ch="city">Aldermere</button></div>
           <p class="small" id="cStartNote" style="margin:0"></p>
         </div>
         <button type="button" class="go" id="cBegin">Begin the adventure</button>
@@ -455,7 +462,8 @@ function renderCreate(){
     $('cReroll').addEventListener('click', () => { roll4d6(); C.sel = null; assignByPriority(); renderCreate(); });
     $('cBegin').addEventListener('click', begin);
     $('cStart').addEventListener('click', e => {
-      const n = +e.target.dataset.ch; if (!n) return;
+      const raw = e.target.dataset.ch; if (!raw) return;
+      const n = raw === 'city' ? 'city' : +raw;
       C.startCh = n; C.startLevel = CHAPTER_LEVEL[n] || 1;
       renderCreate();
     });
@@ -519,7 +527,8 @@ function renderCreate(){
 }
 function renderStartPicker(){
   const n = C.startCh || 1;
-  $('cStart').querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.ch === n)));
+  $('cStart').querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(String(b.dataset.ch) === String(n))));
+  if (n === 'city'){ $('cStartNote').textContent = `Aldermere, the city of bridges. Start in the city with the job board, shops, guilds, and the Spell Forge. Your hero starts at level ${C.imp ? (C.imp.level || 1) : 1}, and every job scales to your level.`; return; }
   $('cStartNote').textContent = `${CHAPTERS[n]}. ${n === 1 ? 'The beginning of the story.' : 'Jump ahead to test or replay it.'} Your hero starts at level ${C.imp ? (C.imp.level || 1) : (CHAPTER_LEVEL[n] || 1)}${C.imp ? ' from your sheet' : ''}, and fights scale to your level.`;
 }
 function renderPreview(){
@@ -533,6 +542,10 @@ function begin(){
   G.mode = 'explore';
   logEl.innerHTML = '';
   const ch = C.startCh || 1;
+  if (ch === 'city'){
+    log('sys', `Aldermere. ${esc(G.char.name)}, level ${G.char.level} ${esc(G.char.raceName || RACES[G.char.race].name)} ${CLASSES[G.char.cls].name}, arrives in the city with a light purse and big plans.`);
+    goTo('city_gate'); window.scrollTo(0, 0); return;
+  }
   if (ch >= 2){
     joinAlly('brindle');
     G.char.gold += 40 * (ch - 1);

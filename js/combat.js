@@ -8,6 +8,26 @@
    COMBAT
    ===================================================================== */
 function startCombat(cfg){
+  /* tiers: {1:[...], 3:[...], 5:[...]} picks the group for the hero's level */
+  if (cfg.tiers){
+    const keys = Object.keys(cfg.tiers).map(Number).sort((a, b) => a - b);
+    let k = keys[0];
+    keys.forEach(x => { if (x <= G.char.level) k = x; });
+    cfg = Object.assign({}, cfg, {foes:cfg.tiers[k].slice(), rec:k});
+  }
+  /* jobs remember the foes you already killed in this fight */
+  if (cfg.fid && G.job && (G.job.cleared || {})[cfg.fid]){ log('sys', 'You already cleared this fight.'); resolve(cfg.win || null); return; }
+  if (cfg.fid && G.job){
+    let dead = (G.job.killed || {})[cfg.fid] || 0;
+    if (dead){
+      const list = cfg.foes.slice(), before = list.length;
+      for (let i = list.length - 1; i >= 0 && dead > 0; i--){ const s = list[i]; if (!(typeof s === 'object' && s.boss)){ list.splice(i, 1); dead--; } }
+      for (let i = list.length - 1; i >= 0 && dead > 0; i--){ list.splice(i, 1); dead--; }
+      cfg = Object.assign({}, cfg, {foes:list});
+      log('sys', `${before - list.length} of these foes already fell on your last attempt. They stay dead.`);
+      if (!list.length){ G.job.cleared[cfg.fid] = true; resolve(cfg.win || null); return; }
+    }
+  }
   const counts = {};
   const foes = cfg.foes.map((f, i) => {
     const spec = typeof f === 'string' ? {key:f} : f;
@@ -18,7 +38,10 @@ function startCombat(cfg){
     return {uid:i, key:spec.key, base:name, name, hp, max:hp, ac:spec.ac || m.ac, m, st:{}, boss:!!spec.boss, xp:spec.xp || m.xp};
   });
   if (cfg.noScale) foes.noScale = true;
-  scaleFoes(foes);
+  scaleFoes(foes, cfg);
+  if (cfg.weaken) foes.forEach(f => { if (f.boss){ f.hp = f.max = Math.max(1, Math.round(f.hp * cfg.weaken)); } });
+  const wound = cfg.fid && G.job && G.job.wounds && G.job.wounds[cfg.fid];
+  if (wound) foes.forEach(f => { if (f.boss){ f.hp = Math.max(1, Math.round(f.max * (1 - wound))); log('sys', `${esc(f.name)} still carries the wounds you gave it last time.`); } });
   foes.forEach(f => { if (counts[f.base] > 1){ const k = foes.filter(x => x.base === f.base).indexOf(f); f.name = `${f.base} ${'ABCDEF'[k]}`; } });
   G.mode = 'combat'; G.choices = null;
   const c = G.combat = {foes, cfg, round:1, target:0, phaseIdx:0, order:null, dodge:false, hidden:false, extra:false, bonusUsed:false, sneakUsed:false, surged:false, subdue:false, initial:foes.length, fled:false};
@@ -44,11 +67,11 @@ function startCombat(cfg){
 }
 /* Fights scale to the hero. Each level above a chapter's suggested level makes
    foes tougher; each level below makes them a little weaker. */
-function scaleFoes(foes){
+function scaleFoes(foes, cfg){
   if (G.scaling === false || !G.char || foes.noScale) return;
   const sc = STORY[G.scene];
   if (!sc || sc.module) return;
-  const rec = CHAPTER_LEVEL[sc.chapter];
+  const rec = (cfg && cfg.rec) || CHAPTER_LEVEL[sc.chapter];
   if (!rec) return;
   const diff = clamp(G.char.level - rec, -2, 8);
   if (!diff) return;
@@ -60,7 +83,7 @@ function scaleFoes(foes){
     if (diff >= 3) f.ac += Math.floor(diff / 3);
     f.xp = Math.max(1, Math.round(f.xp * mult));
   });
-  log('sys', `Fights here are tuned for level ${rec}. ${diff > 0 ? 'Your foes are tougher' : 'Your foes are a little weaker'} to match your level ${G.char.level} hero.`);
+  log('sys', `This fight is tuned for level ${rec}. ${diff > 0 ? 'Your foes are tougher' : 'Your foes are a little weaker'} to match your level ${G.char.level} hero.`);
 }
 function alive(c=G.combat){ return c.foes.filter(f => f.hp > 0 && !f.st.turned && !f.st.fled); }
 function advancePhase(){
@@ -76,6 +99,10 @@ function runCombat(){
       if (c.round === 1 && c.playerSkip){ advancePhase(); continue; }
       c.dodge = false; c.bonusUsed = false; c.sneakUsed = false; c.extra = false; c.surged = false;
       if (c.prone){ c.prone = false; log('sys', 'You get back on your feet.'); }
+      if (c.paralyzed){
+        if (doCheck({save:'con', dc:c.paralyzed})){ c.paralyzed = 0; log('good', 'Feeling floods back into your limbs. You can move again.'); }
+        else { log('bad', 'You are still paralyzed and lose your turn.'); allyTurn(); if (!alive().length){ winCombat(); return; } advancePhase(); continue; }
+      }
       render();
       return;
     }
@@ -195,6 +222,7 @@ function enemyStrike(f, a, st){
   if (f.st.reckless) adv = true;
   if (f.m.special.includes('assassinate') && c.round === 1) adv = true;
   if (c.prone && !atAlly && !/bow|thrown|bolt|flame/i.test(a.name)) adv = true;
+  if (c.paralyzed && !atAlly) adv = true;
   if (c.dodge && !atAlly) dis = true;
   const r = monsterD20(adv, dis);
   const toHit = a.toHit + (f.bonusHit || 0);
@@ -203,14 +231,16 @@ function enemyStrike(f, a, st){
   const crit = r.nat === 20 || (hit && f.m.special.includes('assassinate') && c.round === 1 && c.playerSkip && !atAlly);
   log('roll', `${esc(f.name)} ${a.name} at ${atAlly ? esc(G.ally.name) : 'you'}: ${diceHTML(r)} ${sgn(toHit)} = <b>${total}</b> vs AC ${tAC} <em class="${hit ? 'no' : 'ok'}">${crit ? 'Critical hit!' : hit ? 'Hit' : 'Miss'}</em>`);
   if (!hit) return st.martialUsed;
-  const dr = rollDice(a.dmg, crit);
+  const dmgExpr = f.m.special.includes('swarm') && f.hp <= f.max / 2 ? String(a.dmg).replace(/^(\d+)d/, (m0, n0) => Math.max(1, Math.floor(n0 / 2)) + 'd') : a.dmg;
+  const dr = rollDice(dmgExpr, crit);
   let n = Math.max(1, dr.total + (f.bonusDmg || 0)), extra = f.bonusDmg ? ` ${sgn(f.bonusDmg)} level scaling` : '';
   if (f.m.special.includes('martial') && allies && !st.martialUsed){ const m = rollDice('2d6', crit); n += m.total; extra += ` + Martial Advantage ${m.text}`; st.martialUsed = true; }
   if (f.m.sneak && !st.sneakUsed && r.net !== 'dis' && (r.net === 'adv' || allies)){ const s = rollDice(f.m.sneak, crit); n += s.total; extra += ` + Sneak Attack ${s.text}`; st.sneakUsed = true; }
   const why = `${dr.text}${extra}`;
   if (atAlly){
     hurtAlly(n, a.type, why);
-    if (a.rider && G.ally.hp > 0){
+    if (a.rider && !a.rider.save && G.ally.hp > 0){ const rd = rollDice(a.rider.dmg); hurtAlly(rd.total, a.rider.type, rd.text); }
+    else if (a.rider && G.ally.hp > 0){
       const rd = rollDice(a.rider.dmg), sv = allySaveRoll(), ok = sv >= a.rider.dc;
       log('roll', `${esc(G.ally.name)} ${ABIL_NAME[a.rider.save]} save: <b>${sv}</b> vs DC ${a.rider.dc} <em class="${ok ? 'ok' : 'no'}">${ok ? 'Half' : 'Failed'}</em>`);
       const m = ok && a.rider.half ? Math.floor(rd.total / 2) : ok ? 0 : rd.total;
@@ -219,10 +249,15 @@ function enemyStrike(f, a, st){
     return st.martialUsed;
   }
   if (hurtPlayer(n, a.type, why)) return st.martialUsed;
-  if (a.rider){
+  if (a.rider && !a.rider.save){ const rd = rollDice(a.rider.dmg); if (hurtPlayer(rd.total, a.rider.type, rd.text)) return st.martialUsed; }
+  else if (a.rider){
     const rd = rollDice(a.rider.dmg), ok = doCheck({save:a.rider.save, dc:a.rider.dc});
     const m = ok && a.rider.half ? Math.floor(rd.total / 2) : ok ? 0 : rd.total;
     if (m && hurtPlayer(m, a.rider.type, `${rd.text}${ok ? ', halved' : ''}`)) return st.martialUsed;
+  }
+  if (a.paralyze && !c.paralyzed){
+    if (G.char.race === 'elf') log('sys', 'Your elven blood shrugs off the paralysis.');
+    else if (!doCheck({save:'con', dc:a.paralyze.dc})){ c.paralyzed = a.paralyze.dc; log('bad', 'Your muscles lock. You are <b>paralyzed</b>! Attacks against you have advantage. Each turn you try a Constitution save to shake it off.'); }
   }
   if (a.prone && !c.prone){
     if (!doCheck({save:a.prone.save, dc:a.prone.dc})){ c.prone = true; log('bad', 'You are knocked prone! Melee attacks against you have advantage until you stand on your turn.'); }
@@ -255,9 +290,14 @@ function damageFoe(f, n, type, src, how={}){
   if (f.m.vuln && f.m.vuln.includes(type)){ n *= 2; note = ' Vulnerable!'; }
   if (f.m.immune && f.m.immune.includes(type)){ n = 0; note = ' Immune.'; }
   else if (f.m.resist && f.m.resist.includes(type)){ n = Math.floor(n / 2); note = ' Resisted, half damage.'; }
+  else if (f.m.resistMundane && f.m.resistMundane.includes(type) && !how.magic){ n = Math.floor(n / 2); note = ' Ordinary weapons barely bite: half damage.'; }
   f.hp -= n;
   log('good', `${src}: <b>${n}</b> ${type} damage to ${esc(f.name)}.${note}`);
   if (f.st.asleep && n > 0 && f.hp > 0){ f.st.asleep = false; log('sys', `${esc(f.name)} wakes up!`); }
+  if (f.hp <= 0 && n > 0 && f.m.special.includes('fortitude') && type !== 'radiant' && !how.crit){
+    const sv = d(20) + (f.m.save.con || 0), dc = 5 + n;
+    if (sv >= dc){ f.hp = 1; log('sys', `${esc(f.name)} should have fallen, but it lurches upright with 1 hit point (Undead Fortitude: ${sv} vs DC ${dc}).`); return; }
+  }
   if (f.hp <= 0){
     f.hp = 0;
     if (how.melee && G.combat && G.combat.subdue && f.m.type === 'humanoid'){ f.st.subdued = true; log('good', `<b>${esc(f.name)} is knocked out cold.</b>`); }
@@ -307,12 +347,13 @@ function allyStrike(a, f){
   }
 }
 /* A practice bout: blunted weapons, no XP, and everyone is patched up after. */
-function startSpar(key){
+function startSpar(key, opt){
+  opt = opt || {};
   if (!G.char || G.mode !== 'explore' || !MONSTERS[key]) return false;
-  G.choices = null; G.shop = null;
-  log('you', `Practice bout against a ${esc(MONSTERS[key].name.toLowerCase())}`);
-  log('sys', 'Blunted weapons and a referee. Nobody dies, no XP is earned, and your hit points are restored when the bout ends.');
-  startCombat({foes:[key], spar:true, sparHP:G.char.hp, sparAlly:G.ally ? G.ally.hp : null, noScale:true});
+  G.choices = null; G.shop = null; G.forge = false;
+  log('you', opt.prize ? `Step into the arena against ${esc(opt.name || MONSTERS[key].name)}` : `Practice bout against a ${esc(MONSTERS[key].name.toLowerCase())}`);
+  log('sys', `Blunted weapons and a referee. Nobody dies, no XP is earned, and your hit points are restored when the bout ends.${opt.prize ? ` The purse is ${opt.prize} gold.` : ''}`);
+  startCombat({foes:[opt.name ? {key, name:opt.name} : key], spar:true, prize:opt.prize || 0, sparHP:G.char.hp, sparAlly:G.ally ? G.ally.hp : null, noScale:true});
   return true;
 }
 function endSpar(won){
@@ -321,12 +362,24 @@ function endSpar(won){
   G.char.hp = Math.max(1, cfg.sparHP);
   if (G.ally && cfg.sparAlly != null) G.ally.hp = cfg.sparAlly;
   log('round', won === true ? 'You win the bout' : won === false ? 'You yield' : 'Bout over');
+  if (won === true && cfg.prize){ G.char.gold += cfg.prize; G.flags.arena_wins = (G.flags.arena_wins || 0) + 1; log('good', `The crowd roars. You collect the purse: <b>${cfg.prize}</b> gold.`); }
   say(won === true ? 'The referee raises your hand. Not bad at all.' : won === false ? 'The referee steps in before anyone gets hurt. Your opponent offers you a hand up.' : 'You step out of the ring.');
   render(); autosave();
+}
+/* for jobs: remember how many foes in this fight are dead */
+function recordKills(c){
+  if (!c || !c.cfg.fid || !G.job) return;
+  G.job.killed = G.job.killed || {};
+  const n = c.foes.filter(f => f.hp <= 0).length;
+  if (n) G.job.killed[c.cfg.fid] = (G.job.killed[c.cfg.fid] || 0) + n;
+  /* a boss who survives keeps half the damage you did */
+  const boss = c.foes.find(f => f.boss && f.hp > 0);
+  if (boss){ G.job.wounds = G.job.wounds || {}; G.job.wounds[c.cfg.fid] = Math.min(0.8, (G.job.wounds[c.cfg.fid] || 0) + (1 - boss.hp / boss.max) / 2); }
 }
 function winCombat(){
   const c = G.combat;
   if (c.cfg.spar) return endSpar(true);
+  if (c.cfg.fid && G.job){ G.job.cleared = G.job.cleared || {}; G.job.cleared[c.cfg.fid] = true; }
   const xp = c.foes.reduce((s, f) => s + f.xp, 0);
   log('round', 'Victory');
   G.combat = null; G.mode = 'explore';
@@ -362,16 +415,21 @@ function playerAttack(i){
     if (hasFeat('sneakAttack') && !c.sneakUsed && (r.net === 'adv' || (allyUp() && r.net !== 'dis'))){
       const s = rollDice(sneakDice(), crit); n += s.total; c.sneakUsed = true; txt += ` + Sneak Attack ${s.text}`;
     }
-    damageFoe(f, Math.max(1, n), w.type, txt, {melee:w.melee});
+    damageFoe(f, Math.max(1, n), w.type, txt, {melee:w.melee, magic:w.magic, crit});
   }
   endAction();
 }
-function castSpell(id, onAlly){
+function castSpell(id, onAlly, scroll){
   const c = G.combat, sp = SPELLS[id];
-  if (!armorTrained()){ notice("You can't cast spells in armor you aren't trained in."); return; }
-  if (sp.level > 0){ if (G.char.slots.left <= 0) return; G.char.slots.left--; }
+  if (scroll){
+    if (!has(scroll)) return;
+    takeItem(scroll); G._scroll = true;
+  } else {
+    if (!armorTrained()){ notice("You can't cast spells in armor you aren't trained in."); return; }
+    if (sp.level > 0){ if (G.char.slots.left <= 0) return; G.char.slots.left--; }
+  }
   const f = target();
-  log('sys', `You cast ${sp.name}${sp.level ? ' (1 slot)' : ''}.`);
+  log('sys', scroll ? `You read a scroll of ${sp.name}. The parchment crumbles to ash.` : `You cast ${sp.name}${sp.level ? ' (1 slot)' : ''}.`);
   if (sp.kind === 'attack'){
     const adv = c.hidden || !!f.st.marked || !!f.st.asleep || !!f.st.reckless, dis = !!f.st.hidden || !!f.st.prone;
     const r = d20test({mod:spellAtk(), adv, dis});
@@ -419,6 +477,7 @@ function castSpell(id, onAlly){
   } else if (sp.kind === 'heal'){
     castHeal(sp, onAlly);
   }
+  G._scroll = false;
   endAction();
 }
 function castHeal(sp, onAlly){
@@ -462,6 +521,8 @@ function hideAction(){
 }
 function dodgeAction(){ G.combat.dodge = true; log('sys', 'You take the Dodge action. Attacks against you have disadvantage until your next turn.'); endAction(); }
 function itemAction(id, onAlly){
+  if (ITEMS[id] && ITEMS[id].use === 'escape'){ takeItem(id); log('sys', 'You smash the smoke pellet. Grey smoke boils up around you.'); fleeAction(true); return; }
+  if (ITEMS[id] && ITEMS[id].use === 'scroll'){ castSpell(ITEMS[id].spell, onAlly, id); return; }
   useItem(id, onAlly);
   if (hasFeat('fastHands') && !G.combat.bonusUsed){ G.combat.bonusUsed = true; log('sys', 'Fast Hands: that took only your bonus action.'); render(); return; }
   endAction();
@@ -477,17 +538,21 @@ function turnUndead(){
   });
   endAction();
 }
-function fleeAction(){
+function fleeAction(auto){
   const c = G.combat;
-  const dc = 10 + alive().length;
-  const k = bestSkill(['athletics', 'acrobatics']);
-  const m = skillMod(k);
-  const r = d20test({mod:m});
-  const ok = r.total >= dc;
-  log('roll', `Flee (${SKILLS[k][0]}): ${diceHTML(r)} ${sgn(m)} = <b>${r.total}</b> vs DC ${dc} <em class="${ok ? 'ok' : 'no'}">${ok ? 'Escaped' : 'Cut off'}</em>${r.note}`);
+  let ok = auto === true;
+  if (!ok){
+    const dc = 10 + alive().length;
+    const k = bestSkill(['athletics', 'acrobatics']);
+    const m = skillMod(k);
+    const r = d20test({mod:m});
+    ok = r.total >= dc;
+    log('roll', `Flee (${SKILLS[k][0]}): ${diceHTML(r)} ${sgn(m)} = <b>${r.total}</b> vs DC ${dc} <em class="${ok ? 'ok' : 'no'}">${ok ? 'Escaped' : 'Cut off'}</em>${r.note}`);
+  }
   if (ok && c.cfg.spar){ endSpar(null); return; }
   if (ok){
     const cfg = c.cfg;
+    recordKills(c);
     G.combat = null; G.mode = 'explore';
     say('You break away and run.');
     if (cfg.flee) goTo(cfg.flee); else { render(); autosave(); }
@@ -497,7 +562,7 @@ function fleeAction(){
 }
 
 /* ---------- saving ---------- */
-function snapshot(){ return JSON.stringify({v:G.v, char:G.char, scene:G.scene, flags:G.flags, visits:G.visits, alert:G.alert, ally:G.ally, bench:G.bench, scaling:G.scaling, captive:G.captive, module:G.module, bestiary:BESTIARY, log:G.log.slice(-120), mode:'explore'}); }
+function snapshot(){ return JSON.stringify({v:G.v, char:G.char, scene:G.scene, flags:G.flags, visits:G.visits, alert:G.alert, ally:G.ally, bench:G.bench, scaling:G.scaling, rep:G.rep, job:G.job, captive:G.captive, module:G.module, bestiary:BESTIARY, log:G.log.slice(-120), mode:'explore'}); }
 function writeSave(){ try { localStorage.setItem(SAVE_KEY, snapshot()); return true; } catch (e){ return false; } }
 function autosave(){ if (G.mode === 'explore' && G.char) writeSave(); }
 function readSave(){ try { const s = localStorage.getItem(SAVE_KEY); return s ? JSON.parse(s) : null; } catch (e){ return null; } }

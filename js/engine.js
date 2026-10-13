@@ -18,7 +18,7 @@ const pick = a => a[Math.floor(Math.random() * a.length)];
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
 function freshGame(){
-  return {v:1, char:null, scene:null, flags:{}, visits:{}, alert:0, log:[], mode:'create', combat:null, choices:null, down:null, ally:null, captive:null, shop:null, module:null, bench:{}};
+  return {v:1, char:null, scene:null, flags:{}, visits:{}, alert:0, log:[], mode:'create', combat:null, choices:null, down:null, ally:null, captive:null, shop:null, module:null, bench:{}, rep:0, job:null, forge:false};
 }
 let G = freshGame();
 const ui = {tab:'sheet', diceHist:[], gm:false, gmFoes:[], editStory:false, lib:'adv', editMonster:null};
@@ -34,7 +34,9 @@ function skillMod(k, ch=G.char){
   if (ch.expertise.includes(k)) m += prof(ch);
   return m;
 }
-const saveMod = (a, ch=G.char) => am(a, ch) + (cls(ch).saves.includes(a) ? prof(ch) : 0);
+/* bonuses from magic items you carry: ac, save, spell */
+function itemBonus(key, ch=G.char){ let n = 0; for (const id in ch.inv) if (ch.inv[id] > 0 && ITEMS[id] && ITEMS[id][key] && !ITEMS[id].kind) n += ITEMS[id][key]; return n; }
+const saveMod = (a, ch=G.char) => am(a, ch) + (cls(ch).saves.includes(a) ? prof(ch) : 0) + itemBonus('save', ch);
 /* ---------- equipment ---------- */
 function equipOf(ch=G.char){ if (!ch.equip) ch.equip = {armor:null, shield:false, weapons:[]}; return ch.equip; }
 const owns = (id, ch=G.char) => (ch.inv[id] || 0) > 0;
@@ -51,10 +53,10 @@ const UNARMED = {id:null, name:'Unarmed Strike', abil:'str', dmg:'1', type:'blud
 function weaponObj(id, ch=G.char){
   const it = ITEMS[id], ranged = it.props.includes('ranged');
   const duel = hasFeat('dueling', ch) && !ranged && !it.props.includes('two');
-  const pr = profWeapon(id, ch);
+  const pr = profWeapon(id, ch), plus = it.plus || 0;
   return {id, name:it.name, abil:it.props.includes('finesse') ? 'finesse' : ranged ? 'dex' : 'str', dmg:it.dmg, type:it.dmgType,
-    melee:!ranged, prof:pr, bonus:duel ? 2 : 0, props:it.props,
-    note:[duel ? 'Dueling +2 damage' : '', pr ? '' : 'Not proficient'].filter(Boolean).join(' · ')};
+    melee:!ranged, prof:pr, bonus:(duel ? 2 : 0) + plus, plus, magic:!!it.magic, props:it.props,
+    note:[duel ? 'Dueling +2 damage' : '', plus ? `Magic +${plus}` : '', pr ? '' : 'Not proficient'].filter(Boolean).join(' · ')};
 }
 function weapons(ch=G.char){
   const ws = equipOf(ch).weapons.filter(id => owns(id, ch) && ITEMS[id] && ITEMS[id].kind === 'weapon').map(id => weaponObj(id, ch));
@@ -68,13 +70,13 @@ function armorLabel(ch=G.char){
 }
 function ac(ch=G.char){
   const a = wornArmor(ch), dx = am('dex', ch);
-  let v = a ? a.base + Math.min(dx, a.dexCap) : hasFeat('mageArmor', ch) ? 13 + dx : 10 + dx;
+  let v = a ? a.base + (a.plus || 0) + Math.min(dx, a.dexCap) : hasFeat('mageArmor', ch) ? 13 + dx : 10 + dx;
   if (shieldOn(ch)) v += 2;
-  for (const id in ch.inv) if (ch.inv[id] > 0 && ITEMS[id] && ITEMS[id].ac) v += ITEMS[id].ac;
+  v += itemBonus('ac', ch);
   return v;
 }
 const wAbil = (w, ch=G.char) => w.abil === 'finesse' ? Math.max(am('str', ch), am('dex', ch)) : am(w.abil, ch);
-const atkBonus = (w, ch=G.char) => wAbil(w, ch) + (w.prof === false ? 0 : prof(ch));
+const atkBonus = (w, ch=G.char) => wAbil(w, ch) + (w.prof === false ? 0 : prof(ch)) + (w.plus || 0);
 function migrateChar(ch){
   if (!ch.equip){
     const c = CLASSES[ch.cls];
@@ -82,11 +84,13 @@ function migrateChar(ch){
     ch.equip = JSON.parse(JSON.stringify(c.equip));
   }
   if (!ch.story) ch.story = {text:'', trait:'', ideal:'', bond:'', flaw:''};
+  if (typeof registerCustomSpells === 'function') registerCustomSpells(ch);
   return ch;
 }
-const castMod = (ch=G.char) => am(cls(ch).cast, ch);
-const spellDC = (ch=G.char) => 8 + prof(ch) + castMod(ch);
-const spellAtk = (ch=G.char) => prof(ch) + castMod(ch);
+/* G._scroll is set while a spell scroll is read: scrolls use DC 13 and +5 */
+const castMod = (ch=G.char) => G._scroll ? 2 : am(cls(ch).cast, ch);
+const spellDC = (ch=G.char) => G._scroll ? 13 : 8 + prof(ch) + castMod(ch) + itemBonus('spell', ch);
+const spellAtk = (ch=G.char) => G._scroll ? 5 : prof(ch) + castMod(ch) + itemBonus('spell', ch);
 function featureList(ch=G.char){
   const out = ['stubborn'];
   const f = cls(ch).features || {};
@@ -301,6 +305,8 @@ function stubborn(){
   return true;
 }
 function playerDown(back){
+  if (G.combat) recordKills(G.combat);
+  if (G.job && JOBS[G.job.id]) back = JOBS[G.job.id].outside;
   G.char.hp = 0;
   G.combat = null; G.choices = null;
   G.mode = 'downed';
@@ -342,6 +348,7 @@ function wake(robbed){
   goTo(back, true);
 }
 function die(){
+  if (G.job && JOBS[G.job.id]) return jobRescue();
   G.mode = 'dead';
   log('bad', `<b>${esc(G.char.name)} has died.</b> The Thornvale keeps its secrets a while longer.`);
   render();
@@ -407,7 +414,7 @@ function chooseOption(opt){
   if (G.mode !== 'explore') return;
   if (opt.once) G.flags['once_' + opt.once] = true;
   if (G.choices && !opt.stay) G.choices = null;
-  log('you', esc(opt.label));
+  log('you', esc(resolveText(opt.label)));
   resolve(opt);
 }
 function optionVisible(o){
@@ -418,7 +425,7 @@ function optionVisible(o){
 function goTo(id, quiet){
   const sc = STORY[id];
   if (!sc){ log('sys', `Missing scene: ${esc(id)}`); render(); return; }
-  G.shop = null;
+  G.shop = null; G.forge = false;
   if (sc.reader){ showSection(G.module ? G.module.idx || 0 : 0); return; }
   G.scene = id; G.choices = null; G.mode = 'explore';
   G.visits[id] = (G.visits[id] || 0) + 1;
@@ -497,6 +504,7 @@ function useItem(id, onAlly){
   takeItem(id);
   if (it.use === 'heal' && onAlly && G.ally){ healAlly(it.heal, it.name); return; }
   if (it.use === 'heal') heal(it.heal, it.name);
+  if (it.use === 'scroll' && SPELLS[it.spell] && SPELLS[it.spell].kind === 'heal' && !G.combat){ G._scroll = true; castHeal(SPELLS[it.spell], onAlly); G._scroll = false; }
   if (it.use === 'insp'){ G.char.insp = true; log('good', `You light the ${it.name}. You gain Inspiration.`); }
 }
 

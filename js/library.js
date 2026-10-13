@@ -49,7 +49,7 @@ function toggleShield(){
 }
 
 /* ---------- shops ---------- */
-const priceOf = (shop, id) => { const o = (SHOPS[shop].prices || {})[id]; return Math.max(1, Math.round(o !== undefined ? o : (ITEMS[id].cost || 1))); };
+const priceOf = (shop, id) => { const o = (SHOPS[shop].prices || {})[id]; const base = o !== undefined ? o : (ITEMS[id].cost || 1); return Math.max(1, Math.round(base * (SHOPS[shop].city && typeof repAtLeast === 'function' && repAtLeast(45) ? 0.9 : 1))); };
 const sellPrice = id => Math.floor((ITEMS[id].cost || 0) / 2);
 function shopNote(id){
   const it = ITEMS[id];
@@ -77,7 +77,8 @@ function sell(id){
 function renderShop(box){
   const s = SHOPS[G.shop], ch = G.char;
   let h = `<div class="shop"><div class="shophead"><div><span class="lbl2">Shop</span><b>${esc(s.name)}</b></div><span class="gold">${ch.gold} gp</span></div><p class="small" style="margin:0">${esc(s.blurb)}</p>`;
-  const groups = [['Supplies', id => !ITEMS[id].kind], ['Weapons', id => ITEMS[id].kind === 'weapon'], ['Armor and shields', id => ITEMS[id].kind === 'armor' || ITEMS[id].kind === 'shield']];
+  if (s.city && typeof repAtLeast === 'function' && repAtLeast(45)) h += `<p class="small" style="margin:0">Your standing in Aldermere earns you 10% off.</p>`;
+  const groups = [['Supplies', id => !ITEMS[id].kind && !ITEMS[id].magic], ['Magic items', id => !ITEMS[id].kind && ITEMS[id].magic], ['Weapons', id => ITEMS[id].kind === 'weapon'], ['Armor and shields', id => ITEMS[id].kind === 'armor' || ITEMS[id].kind === 'shield']];
   groups.forEach(([name, test]) => {
     const ids = s.stock.filter(id => ITEMS[id] && test(id));
     if (!ids.length) return;
@@ -633,7 +634,7 @@ function renderGM(){
 }
 
 /* ---------- map ---------- */
-const CHAPTER_START = {1:'c1_greywater', 2:'bramblewick', 3:'c3_briefing'};
+const CHAPTER_START = {1:'c1_greywater', 2:'bramblewick', 3:'c3_briefing', city:'city_gate'};
 function sceneLinks(id){
   const sc = STORY[id], out = new Set();
   if (!sc) return [];
@@ -667,7 +668,7 @@ function renderMapPane(p){
   }
   if (!sc){ p.innerHTML = '<p class="empty">No map yet.</p>'; return; }
   const inGroup = id => STORY[id] && (sc.module ? !!STORY[id].module : (!STORY[id].module && STORY[id].chapter === sc.chapter));
-  const start = sc.module ? 'm:' + (G.module ? G.module.start : '') : (CHAPTER_START[sc.chapter] || G.scene);
+  const start = sc.module ? 'm:' + (G.module ? G.module.start : '') : (CHAPTER_START[sc.chapter] || (typeof JOBS !== 'undefined' && sc.job && JOBS[sc.job] ? JOBS[sc.job].outside : G.scene));
   const depth = {}, order = [], q = [start];
   depth[start] = 0;
   while (q.length){
@@ -935,6 +936,7 @@ function traitsText(m){
   if (m.parry) t.push(`Parry +${m.parry}`);
   if (m.sneak) t.push(`Sneak Attack ${m.sneak}`);
   if (m.resist) t.push(`Resists ${m.resist.join(', ')}`);
+  if (m.resistMundane) t.push(`Resists ${m.resistMundane.join(', ')} from non-magical weapons`);
   return t.join(', ');
 }
 function renderLibPeople(body){

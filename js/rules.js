@@ -21,7 +21,7 @@ const SKILLS = {
 };
 const FALLBACK_SKILLS = ['perception','persuasion','athletics','insight','survival','history','nature'];
 /* XP needed to reach the NEXT level, indexed by current level */
-const XP_NEXT = {1:300, 2:900, 3:2700, 4:6500, 5:14000};
+const XP_NEXT = {1:300, 2:900, 3:2700, 4:6500, 5:14000, 6:23000, 7:34000, 8:48000, 9:64000, 10:85000, 11:100000, 12:120000, 13:140000, 14:165000, 15:195000, 16:225000, 17:265000, 18:305000, 19:355000};
 const STANDARD_ARRAY = [15,14,13,12,10,8];
 
 const RACES = {
@@ -208,3 +208,46 @@ const SHOPS = {
 };
 const DMG_TYPES = ['acid','bludgeoning','cold','fire','force','lightning','necrotic','piercing','poison','psychic','radiant','slashing','thunder'];
 
+
+/* =====================================================================
+   ALDERMERE: city goods, magic items, and the city's shops.
+   plus: a magic weapon or armor bonus (+1 to hit and damage, or +1 AC).
+   save: bonus to every saving throw. spell: bonus to spell attacks and DC.
+   magic:true items count as magical for monsters that shrug off mundane blows.
+   ===================================================================== */
+Object.assign(ITEMS, {
+  potion_greater:{name:'Potion of Greater Healing', use:'heal', heal:'4d4+4', cost:100, desc:'Regain 4d4 + 4 hit points.'},
+  smoke:     {name:'Smoke Pellet', use:'escape', cost:30, desc:'Smash it in a fight to vanish in a cloud of smoke. You escape automatically, unless the fight cannot be fled.'},
+  ring_prot: {name:'Ring of Protection', magic:true, ac:1, save:1, cost:350, desc:'A plain silver band that hums faintly. +1 to your AC and to every saving throw.'},
+  cloak_prot:{name:'Cloak of Protection', magic:true, ac:1, save:1, cost:400, desc:'Grey wool that turns aside blows. +1 to your AC and to every saving throw.'},
+  starglass: {name:'Starglass Lens', magic:true, spell:1, cost:250, desc:'A monocle of smoky crystal from the old observatory. +1 to your spell attacks and spell save DC.'},
+  wardstone: {name:'Wardstone of Aldermere', magic:true, save:1, cost:200, desc:'A river pebble carved with the city seal and blessed by the Collegium. +1 to every saving throw.'},
+  citykey:   {name:'Key to the City', quest:true, desc:'A heavy brass key on a blue ribbon. The Hero\'s House on Lantern Square is yours.'}
+});
+/* +1 weapons (m_<id>) and +1 armor (ma_<id>) */
+WEAPON_LIST.forEach(([id]) => {
+  const b = ITEMS['w_' + id];
+  ITEMS['m_' + id] = Object.assign({}, b, {name:'+1 ' + b.name, plus:1, magic:true, cost:300 + b.cost * 2,
+    desc:b.desc + ' Magic: +1 to attack and damage rolls.'});
+});
+ARMOR_LIST.forEach(([id]) => {
+  const b = ITEMS['a_' + id];
+  ITEMS['ma_' + id] = Object.assign({}, b, {name:'+1 ' + b.name, plus:1, magic:true, cost:600 + b.cost,
+    desc:b.desc.replace(/AC (\d+)/, (m, n) => 'AC ' + (+n + 1)) + ' Magic: +1 AC.'});
+});
+Object.assign(SHOPS, {
+  hobb:{city:true, name:"Hobb's Provisions", blurb:'Rope, lamps, rations, and a cat asleep on the scales. Hobb weighs everything twice.',
+        stock:['potion','poultice','candle','ration','rope','torch','tools','crowbar']},
+  ironwright:{city:true, name:'Ironwright Smithy', blurb:'The ring of hammers never stops on Anvil Lane. Every blade here is honest steel.',
+        stock:['shield', ...WEAPON_LIST.map(w => 'w_' + w[0]), ...ARMOR_LIST.map(a => 'a_' + a[0])]},
+  greenbottle:{city:true, name:'The Green Bottle', blurb:'An apothecary that smells of mint and something you would rather not ask about.',
+        stock:['potion','poultice','candle','potion_greater'], prices:{potion:22}},
+  nightmarket:{city:true, name:'The Night Market on Lantern Row', blurb:'Lanterns on strings, whispered prices, and goods that do not ask where you got your gold.',
+        stock:['smoke','potion_greater','tools','candle','wardstone']},
+  quietblade:{city:true, name:'The Quiet Blade', blurb:'A narrow shop with no sign. The swordsmith speaks in a whisper and her blades sing.',
+        stock:WEAPON_LIST.map(w => 'm_' + w[0])},
+  gilded:{city:true, name:'The Gilded Lantern', blurb:'A curio shop for people with titles. Every item sits on velvet under glass.',
+        stock:['ring_prot','cloak_prot','potion_greater','wardstone']},
+  royalarmory:{city:true, name:'The Royal Armory', blurb:'The city\'s own armorers, who only sell to those Aldermere trusts with its life.',
+        stock:['a_plate', ...ARMOR_LIST.map(a => 'ma_' + a[0])]}
+});

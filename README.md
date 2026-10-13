@@ -22,7 +22,44 @@ Every time you change a file on GitHub, the website updates by itself within a m
   * Chapter One: *The Marsh Road* (suggested level 1)
   * Chapter Two: *The Sunken Shrine* (level 2)
   * Chapter Three: *The Saltreach Gaol* (level 3), a heist in a tidal-island prison with three cover identities, a suspicion meter, and an inside man to expose
-* **Start at any chapter** from the character creation screen. Your hero begins at that chapter's suggested level.
+* **Aldermere, the City of Bridges,** a city hub you can reach from Greywater, Bramblewick, or Captain Doyle's, or choose as your starting point. It has:
+  * **Shops** on Market Row: provisions, a smithy, and an apothecary
+  * **An inn**, the Lantern and Lark, where you can rest, hear rumors, gamble, and hire help
+  * **The Hall of the Open Road**, an adventurers' guild with the **job board**
+  * **The Amberglass Collegium** and its **Spell Forge** (see below)
+  * **A chapel** for healing and blessings, and the **Wardens' Hall**, which pays bounties on live captives
+* **The job board** has 11 one-shot jobs:
+  * Rats in the Undercroft, a sewer clean-out
+  * The Hedge-Witch's List, gathering herbs
+  * Survey the Old Mill Road, scouting for the town council
+  * The Eel Knot Ledger, a retrieval with a moral choice
+  * The Drowned Chapel, undead
+  * Silk for the Weavers, giant spiders
+  * The Ogre's Toll, a bounty you can talk your way out of
+  * Lights in the Old Observatory, a mage quest
+  * The Apprentice's Mistake, a mage quest
+  * Hunt the Owlbear
+  * The Lady Mayor's Commission, which ties into the main story
+
+  Every job scales to your hero. Fights pick a group of foes for your level (tiers at levels 1, 3, 5, 7 and so on), and level scaling fine-tunes them. Check DCs and pay grow with your level too.
+* **On a job:**
+  * You can **quit** at any time from the "Anywhere" choices. You get no pay, but there is no penalty.
+  * If you **die**, guild runners drag you out. You wake just outside the job area with 1 hit point, minus a tenth of your gold.
+  * Every foe you already killed **stays dead** when you go back in. A boss who survived keeps half the wounds you gave it.
+* **Standing in Aldermere.** Each job raises your reputation (half as much for repeats), and new standing opens new places:
+  * **Known (10):** 1st-level spells at the Spell Forge, and Collegium, Chapel, Weaver, and Warden jobs
+  * **Trusted (25):** Lantern Row, with the Night Market and The Quiet Blade (+1 weapons)
+  * **Respected (45):** The Gilded Lantern (Ring and Cloak of Protection), empowered spells, and 10% off at every city shop
+  * **Renowned (70):** The Royal Armory (+1 armor), the Hall of Champions arena, and the Lady Mayor's commission
+  * **Hero of Aldermere (100):** the Key to the City and the Hero's House
+* **The Spell Forge.** Design your own spell:
+  * a shape: bolt, brand, lance, wave, or mend
+  * an element
+  * a cantrip or a 1st-level spell, with an optional empowered version
+  * a saving throw
+
+  Clerics and wizards learn the spell and cast it like any other. Other classes get it as scrolls: two come with each design, and the scribes sell more. Scrolls use +5 to hit and DC 13, need no slot, and work in any armor. You can hold four designs at a time.
+* **Start at any chapter, or in Aldermere,** from the character creation screen. Your hero begins at that chapter's suggested level.
 * **Level scaling.** Fights scale to your hero: tougher when you are above a chapter's suggested level, a little weaker when you are below it. Turn it off in the Journal tab.
 * **Character creation** with four peoples, four classes, five backgrounds, standard array or 4d6, and your own backstory (type it or load a .txt file).
 * **PDF character sheet import** from a *fillable* 5e sheet: name, class and level, ability scores, hit points, XP, gold, weapons, and backstory.
@@ -68,6 +105,9 @@ story/chapter1.js          Chapter One: The Marsh Road
 story/chapter2.js          Chapter Two: The Sunken Shrine
 story/chapter3.js          Chapter Three: The Saltreach Gaol
 story/npcs.js              hiring board, the cast of named characters, roadside people, captives
+story/city.js              Aldermere: city scenes, standing (reputation), rumors, the arena
+story/jobs.js              the job board, job rules (scaling, quitting, rescue), and all 11 jobs
+js/forge.js                the Spell Forge and spell scrolls
 js/engine.js               dice, checks, rewards, hazards, outcomes, rests, saving
 js/combat.js               turns, attacks, spells, combat actions
 js/ui.js                   story log, choices, character sheet, character creation
@@ -126,6 +166,17 @@ Choices, encounter results, and check results all use the same small set of keys
 
 Options also take `label`, `if` (a condition), and `once`. Encounter table entries take `if` and `once` too. `choices` can be a function of `G` that builds the menu when it opens.
 
+### Writing a new job
+
+`story/jobs.js` has small helpers. A job is `addJob({...})`, an `outsideScene` (where you wake if you fall), and a few `jscene` scenes. A job fight uses tiers and a fight id, so the game can remember kills:
+
+```js
+{label:'Fight the rats', tag:'Fight', if:G => !jc('sw1'),
+ fight:jf('sw1', {1:['rat','rat'], 3:['rat_swarm','rat'], 5:['rat_swarm','rat_swarm','ghoul']})}
+```
+
+Use `jset('key')`, `jon('key')` and `jadd('key', n)` for flags that belong to one run of the job, `JDC(11)` for a DC that grows with level, and `completeJob({goldMult, rep, text})` to finish. Any fight anywhere can use `tiers` too.
+
 ### People in fights
 
 Any fight can use a people template and give it a name:
@@ -140,8 +191,10 @@ Add `noScale:true` to a fight to skip level scaling. The template keys are `comm
 
 * **Stubborn Hero:** once per short rest, when you would drop to 0 hit points, you drop to 1 instead.
 * **Mage Armor:** wizards keep it up between adventures (AC 13 + Dexterity with no armor).
-* **Levels:** characters advance to any level, but class features are built in up to level 3. Spell slots are all treated as 1st level.
+* **Spell slots** are all treated as 1st level.
 * **Companions** recover fully on a short rest and get back up after a fight you win. Their healing spells come back on a long rest.
+* **Levels** go up to 20 with the SRD XP table, but class features stop at level 3, so high-tier jobs are tuned a little lighter than the books would make them.
+* **Ghoul paralysis** lasts until you make a DC 10 Constitution save at the start of one of your turns. Elves are immune.
 * **People templates** follow the SRD stat blocks. A few things are simplified: spell slots become a limit per fight, area spells hit you and your companion, and support spells like Bless are left out.
 
 ## Saves

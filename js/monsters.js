@@ -224,3 +224,65 @@ function pron(a, form){
   const T = {he:{s:'he', o:'him', p:'his'}, she:{s:'she', o:'her', p:'her'}, they:{s:'they', o:'them', p:'their'}};
   return (T[p] || T.he)[form || 's'];
 }
+
+/* =====================================================================
+   MORE SRD 5.1 MONSTERS, for the Aldermere jobs.
+   resistMundane: these damage types are halved unless the blow is magical
+   (a magic weapon or a spell). fortitude: Undead Fortitude. swarm: its
+   attack drops to half dice at half hit points. A strike's rider with no
+   save always deals its damage; paralyze:{dc} can paralyze you.
+   ===================================================================== */
+Object.assign(MONSTERS, {
+  zombie:{name:'Zombie', ac:8, hp:22, xp:50, pp:8, init:-2, type:'undead', special:['undead','fortitude'], immune:['poison'],
+    save:{str:1,dex:-2,con:3,int:-4,wis:0,cha:-3}, attack:{name:'Slam', toHit:3, dmg:'1d6+1', type:'bludgeoning'}},
+  ghoul:{name:'Ghoul', ac:12, hp:22, xp:200, pp:10, init:2, type:'undead', special:['undead'], immune:['poison'],
+    save:{str:1,dex:2,con:0,int:-2,wis:0,cha:-2}, attack:{name:'Claws', toHit:4, dmg:'2d4+2', type:'slashing'},
+    actions:[{w:1, strikes:[{name:'Bite', toHit:2, dmg:'2d6+2', type:'piercing'}]},
+             {w:2, strikes:[{name:'Claws', toHit:4, dmg:'2d4+2', type:'slashing', paralyze:{dc:10}}]}]},
+  rat_swarm:{name:'Swarm of Rats', ac:10, hp:24, xp:50, pp:10, init:0, type:'beast', special:['swarm'], resist:['bludgeoning','piercing','slashing'],
+    save:{str:-1,dex:0,con:-1,int:-4,wis:0,cha:-4}, attack:{name:'Bites', toHit:2, dmg:'2d6', type:'piercing'}},
+  gray_ooze:{name:'Gray Ooze', ac:8, hp:22, xp:100, pp:8, init:-2, type:'ooze', special:[], resist:['acid','cold','fire'],
+    save:{str:1,dex:-2,con:3,int:-5,wis:-2,cha:-4}, attack:{name:'Pseudopod', toHit:3, dmg:'1d6+1', type:'bludgeoning'},
+    actions:[{w:1, strikes:[{name:'Pseudopod', toHit:3, dmg:'1d6+1', type:'bludgeoning', rider:{dmg:'2d6', type:'acid'}}]}]},
+  /* an original weaker variant for low-level sewer jobs */
+  ooze_small:{name:'Lesser Gray Ooze', ac:8, hp:12, xp:50, pp:8, init:-2, type:'ooze', special:[], resist:['acid','cold','fire'],
+    save:{str:1,dex:-2,con:2,int:-5,wis:-2,cha:-4}, attack:{name:'Pseudopod', toHit:3, dmg:'1d4+1', type:'bludgeoning'},
+    actions:[{w:1, strikes:[{name:'Pseudopod', toHit:3, dmg:'1d4+1', type:'bludgeoning', rider:{dmg:'1d6', type:'acid'}}]}]},
+  crocodile:{name:'Crocodile', ac:12, hp:19, xp:100, pp:10, init:0, type:'beast', special:[],
+    save:{str:2,dex:0,con:1,int:-4,wis:0,cha:-3}, attack:{name:'Bite', toHit:4, dmg:'1d10+2', type:'piercing'}},
+  giant_spider:{name:'Giant Spider', ac:14, hp:26, xp:200, pp:10, init:3, type:'beast', special:[],
+    save:{str:2,dex:3,con:1,int:-4,wis:0,cha:-3}, attack:{name:'Bite', toHit:5, dmg:'1d8+3', type:'piercing'},
+    actions:[{w:1, strikes:[{name:'Bite', toHit:5, dmg:'1d8+3', type:'piercing', rider:{save:'con', dc:11, dmg:'2d8', type:'poison', half:true}}]}]},
+  bugbear:{name:'Bugbear', ac:16, hp:27, xp:200, pp:10, init:2, type:'humanoid', special:[],
+    save:{str:2,dex:2,con:1,int:-1,wis:0,cha:-1}, attack:{name:'Morningstar', toHit:4, dmg:'2d8+2', type:'piercing'},
+    actions:[{w:3, strikes:[{name:'Morningstar', toHit:4, dmg:'2d8+2', type:'piercing'}]}, {w:1, strikes:[{name:'Thrown Javelin', toHit:4, dmg:'1d6+2', type:'piercing'}]}]},
+  gnoll:{name:'Gnoll', ac:15, hp:22, xp:100, pp:10, init:1, type:'humanoid', special:[],
+    save:{str:2,dex:1,con:0,int:-2,wis:0,cha:-2}, attack:{name:'Spear', toHit:4, dmg:'1d6+2', type:'piercing'},
+    actions:[{w:2, strikes:[{name:'Spear', toHit:4, dmg:'1d6+2', type:'piercing'}]}, {w:1, strikes:[{name:'Bite', toHit:4, dmg:'1d4+2', type:'piercing'}]}, {w:1, strikes:[{name:'Longbow', toHit:3, dmg:'1d8+1', type:'piercing'}]}]},
+  ogre:{name:'Ogre', ac:11, hp:59, xp:450, pp:8, init:-1, type:'giant', special:[],
+    save:{str:4,dex:-1,con:3,int:-3,wis:-2,cha:-2}, attack:{name:'Greatclub', toHit:6, dmg:'2d8+4', type:'bludgeoning'},
+    actions:[{w:4, strikes:[{name:'Greatclub', toHit:6, dmg:'2d8+4', type:'bludgeoning'}]}, {w:1, strikes:[{name:'Thrown Javelin', toHit:6, dmg:'2d6+4', type:'piercing'}]}]},
+  dire_wolf:{name:'Dire Wolf', ac:14, hp:37, xp:200, pp:13, init:2, type:'beast', special:['pack'],
+    save:{str:3,dex:2,con:2,int:-4,wis:1,cha:-2}, attack:{name:'Bite', toHit:5, dmg:'2d6+3', type:'piercing'},
+    actions:[{w:1, strikes:[{name:'Bite', toHit:5, dmg:'2d6+3', type:'piercing', prone:{save:'str', dc:13}}]}]},
+  wight:{name:'Wight', ac:14, hp:45, xp:700, pp:13, init:2, type:'undead', special:['undead'], immune:['poison'],
+    resist:['necrotic'], resistMundane:['bludgeoning','piercing','slashing'],
+    save:{str:2,dex:2,con:3,int:0,wis:1,cha:2}, attack:{name:'Longsword', toHit:4, dmg:'1d8+2', type:'slashing'},
+    actions:[{w:2, strikes:[{name:'Longsword', toHit:4, dmg:'1d8+2', type:'slashing'}, {name:'Longsword', toHit:4, dmg:'1d8+2', type:'slashing'}]},
+             {w:1, strikes:[{name:'Life Drain', toHit:4, dmg:'1d6+2', type:'necrotic'}, {name:'Longsword', toHit:4, dmg:'1d8+2', type:'slashing'}]}]},
+  specter:{name:'Specter', ac:12, hp:22, xp:200, pp:10, init:2, type:'undead', special:['undead'], immune:['necrotic','poison'],
+    resist:['acid','cold','fire','lightning','thunder'], resistMundane:['bludgeoning','piercing','slashing'],
+    save:{str:-5,dex:2,con:0,int:0,wis:0,cha:0}, attack:{name:'Life Drain', toHit:4, dmg:'3d6', type:'necrotic'}},
+  shadow:{name:'Shadow', ac:12, hp:16, xp:100, pp:10, init:2, type:'undead', special:['undead'], immune:['necrotic','poison'], vuln:['radiant'],
+    resist:['acid','cold','fire','lightning','thunder'], resistMundane:['bludgeoning','piercing','slashing'],
+    save:{str:-2,dex:2,con:1,int:-2,wis:0,cha:-1}, attack:{name:'Strength Drain', toHit:4, dmg:'2d6+2', type:'necrotic'}},
+  animated_armor:{name:'Animated Armor', ac:18, hp:33, xp:200, pp:6, init:0, type:'construct', special:[], immune:['poison','psychic'],
+    save:{str:2,dex:0,con:1,int:-5,wis:-4,cha:-5}, attack:{name:'Slam', toHit:4, dmg:'1d6+2', type:'bludgeoning'}, multi:2},
+  flying_sword:{name:'Flying Sword', ac:17, hp:17, xp:50, pp:7, init:2, type:'construct', special:[], immune:['poison','psychic'],
+    save:{str:1,dex:4,con:0,int:-5,wis:-3,cha:-5}, attack:{name:'Longsword', toHit:3, dmg:'1d8+1', type:'slashing'}},
+  owlbear:{name:'Owlbear', ac:13, hp:59, xp:700, pp:13, init:1, type:'monstrosity', special:[],
+    save:{str:5,dex:1,con:3,int:-4,wis:1,cha:-2}, attack:{name:'Beak', toHit:7, dmg:'1d10+5', type:'piercing'},
+    attacks:[{name:'Beak', toHit:7, dmg:'1d10+5', type:'piercing'}, {name:'Claws', toHit:7, dmg:'2d8+5', type:'slashing'}], multi:2}
+});
+/* the archmage's Stoneskin only stops ordinary weapons */
+MONSTERS.archmage.resistMundane = MONSTERS.archmage.resist; delete MONSTERS.archmage.resist;
