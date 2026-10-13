@@ -560,7 +560,7 @@ function showSection(i){
 
 /* ---------- solo GM tools ---------- */
 function monsterOptionsHTML(sel){
-  const groups = [['This adventure', k => k.startsWith('mod_')], ['Your bestiary', k => k.startsWith('my_')], ['Core monsters', k => !k.startsWith('mod_') && !k.startsWith('my_')]];
+  const groups = [['This adventure', k => k.startsWith('mod_')], ['Your bestiary', k => k.startsWith('my_')], ['People', k => !!MONSTERS[k].npc], ['Core monsters', k => !k.startsWith('mod_') && !k.startsWith('my_') && !MONSTERS[k].npc]];
   return groups.map(([label, test]) => {
     const ks = Object.keys(MONSTERS).filter(test).sort((a, b) => MONSTERS[a].name.localeCompare(MONSTERS[b].name));
     return ks.length ? `<optgroup label="${label}">${ks.map(k => `<option value="${k}" ${k === sel ? 'selected' : ''}>${esc(MONSTERS[k].name)} (AC ${MONSTERS[k].ac}, HP ${MONSTERS[k].hp})</option>`).join('')}</optgroup>` : '';
@@ -872,6 +872,7 @@ function renderLibrary(){
   const body = $('libBody');
   if (ui.lib === 'adv') renderLibAdventures(body);
   else if (ui.lib === 'best') renderLibBestiary(body);
+  else if (ui.lib === 'people') renderLibPeople(body);
   else {
     body.innerHTML = `<p class="small" style="margin:0">Write adventures in any text editor and save them as .txt. This is the full list of what the game understands.</p>
       <div class="row"><button type="button" class="mini" id="guideCopy">Copy this guide</button><button type="button" class="mini" id="sampleCopy">Copy the sample adventure</button></div>
@@ -910,6 +911,68 @@ function renderLibAdventures(body){
   $('modPasteGo').addEventListener('click', () => run($('modPaste').value, 'Pasted adventure'));
 }
 const blankMonster = () => ({name:'', type:'monstrosity', ac:12, hp:10, xp:50, pp:10, init:0, multi:1, save:{}, attacks:[], special:[], areas:[], vuln:[], immune:[]});
+/* ---------- people: SRD templates, companions, and the cast ---------- */
+const SPECIAL_NAME = {pack:'Pack Tactics', reckless:'Reckless', assassinate:'Assassinate', evasion:'Evasion', magicres:'Magic Resistance', brave:'Brave', nimble:'Cunning Action', martial:'Martial Advantage'};
+function strikeText(s){
+  if (s.save) return `${esc(s.name)} (DC ${s.dc} ${ABIL_NAME[s.save]} save, ${s.dmg} ${s.type}${s.half ? ', half on a save' : ''})`;
+  let t = `${esc(s.name)} ${sgn(s.toHit)} (${s.dmg} ${s.type})`;
+  if (s.rider) t += ` plus DC ${s.rider.dc} ${ABIL_NAME[s.rider.save]} save or ${s.rider.dmg} ${s.rider.type}`;
+  if (s.prone) t += `, may knock you prone`;
+  return t;
+}
+function actionsText(m){
+  return routinesOf(m).map(r => {
+    if (r.heal) return `${esc(r.name)} on a hurt friend (heals ${r.heal}, ${r.uses} times)`;
+    const parts = [];
+    r.strikes.forEach(s => { const last = parts[parts.length - 1]; if (last && last.s === s) last.n++; else parts.push({s, n:1}); });
+    const t = parts.map(p => strikeText(p.s) + (p.n > 1 ? ` x${p.n}` : '')).join(', then ');
+    const lim = r.strikes.find(s => s.uses);
+    return t + (lim ? ` (${lim.uses} times a fight)` : '');
+  }).join('; or ');
+}
+function traitsText(m){
+  const t = (m.special || []).filter(k => SPECIAL_NAME[k]).map(k => SPECIAL_NAME[k]);
+  if (m.parry) t.push(`Parry +${m.parry}`);
+  if (m.sneak) t.push(`Sneak Attack ${m.sneak}`);
+  if (m.resist) t.push(`Resists ${m.resist.join(', ')}`);
+  return t.join(', ');
+}
+function renderLibPeople(body){
+  const ready = !!G.char && G.mode === 'explore';
+  const pick = ui.npcPick || NPC_KEYS[0], m = MONSTERS[pick];
+  const met = G.char ? NPC_ROSTER.filter(p => p.known(G)) : [];
+  const status = k => G.ally && G.ally.key === k ? '<span class="chip on">With you</span>' : (G.bench || {})[k] ? '<span class="chip">Waiting in town</span>' : '';
+  body.innerHTML = `
+    <p class="small" style="margin:0">The people of the world use the SRD 5.1 statistics for ordinary folk, from commoners to archmages. The game gives each one an original name and story. Use them in the solo GM tools, or try a practice bout.</p>
+    <div class="bgrid">
+      <div class="bcol">
+        <h4 class="lh">Templates <span>${NPC_KEYS.length}</span></h4>
+        <select id="npcSel" aria-label="Template">${NPC_KEYS.map(k => `<option value="${k}" ${k === pick ? 'selected' : ''}>${esc(MONSTERS[k].name)} (CR ${MONSTERS[k].cr}, ${MONSTERS[k].xp} XP)</option>`).join('')}</select>
+        <div class="item"><div class="it"><b>${esc(m.name)}</b> <span class="chip">CR ${m.cr}</span>
+          <p>${esc(m.desc)}</p>
+          <p>AC ${m.ac}, HP ${m.hp}, ${m.xp} XP, passive Perception ${m.pp}.</p>
+          <p><b>Each turn:</b> ${actionsText(m)}.</p>
+          ${traitsText(m) ? `<p><b>Traits:</b> ${traitsText(m)}.</p>` : ''}
+          <p>Saves: ${ABILS.map(a => `${a.toUpperCase()} ${sgn(m.save[a] || 0)}`).join(', ')}.</p></div></div>
+        <div class="row"><button type="button" class="mini" id="npcSpar" ${ready ? '' : 'disabled'}>Practice bout</button><button type="button" class="mini" id="npcGM" ${G.char ? '' : 'disabled'}>Add to a GM fight</button></div>
+        ${ready ? '' : '<p class="small" style="margin:0">Practice bouts need a hero who is not in a fight.</p>'}
+      </div>
+      <div class="bcol">
+        <h4 class="lh">Companions for hire <span>${Object.keys(ALLIES).length}</span></h4>
+        ${Object.keys(ALLIES).map(k => `<div class="item"><div class="it"><b>${esc(ALLIES[k].name)}</b> <span class="chip">${esc(ALLIES[k].kind)}</span> ${status(k)}<p>${allyLine(k).replace(/^<b>.*?<\/b>, [^:]*: /, '')} ${esc(ALLIES[k].desc)}</p></div></div>`).join('')}
+        <p class="small" style="margin:4px 0 0">Hire them from the board in Greywater, Bramblewick, or at Captain Doyle's. Some you can also meet on the road.</p>
+        <h4 class="lh" style="margin-top:14px">People you have met <span>${met.length}</span></h4>
+        ${met.length ? met.map(p => `<div class="item"><div class="it"><b>${esc(p.name)}</b> <span class="chip">${esc(p.ally ? ALLIES[p.ally].kind : MONSTERS[p.tpl].name)}</span><p>${esc(p.role)}.</p></div></div>`).join('') : '<p class="empty">No one yet. Go and meet some people.</p>'}
+      </div>
+    </div>`;
+  $('npcSel').addEventListener('change', e => { ui.npcPick = e.target.value; renderLibPeople(body); });
+  $('npcSpar').addEventListener('click', () => { if (startSpar(pick)){ $('library').hidden = true; window.scrollTo(0, 0); } });
+  $('npcGM').addEventListener('click', () => {
+    if (ui.gmFoes.length < 8) ui.gmFoes.push(pick);
+    ui.gm = true; ui.gmMon = pick; $('library').hidden = true; render();
+    notice(`${m.name} added to the GM tools. Start the fight from there.`);
+  });
+}
 function renderLibBestiary(body){
   const m = ui.monsterDraft || blankMonster();
   const v = x => esc(x === undefined || x === null ? '' : x);

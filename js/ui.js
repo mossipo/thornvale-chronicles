@@ -141,7 +141,7 @@ function renderCombat(){
   let html = `<div class="turnbar">${chips.join('')}</div><div class="foes">`;
   if (G.ally){
     const pct = clamp(G.ally.hp / G.ally.max * 100, 0, 100);
-    html += `<div class="foe ally"><span class="fn">${esc(G.ally.name)} <span>AC ${ALLIES[G.ally.key].ac}</span></span><div class="bar me${pct <= 35 ? ' low' : ''}"><i style="width:${pct}%"></i></div><span class="fn"><span>${G.ally.hp}/${G.ally.max} HP · ${G.ally.hp > 0 ? 'attacks your target' : 'down'}</span></span></div>`;
+    html += `<div class="foe ally"><span class="fn">${esc(G.ally.name)} <span>AC ${ALLIES[G.ally.key].ac}</span></span><div class="bar me${pct <= 35 ? ' low' : ''}"><i style="width:${pct}%"></i></div><span class="fn"><span>${G.ally.hp}/${G.ally.max} HP · ${G.ally.hp <= 0 ? 'down' : ALLIES[G.ally.key].heal ? `heals you at half HP (${G.ally.heals || 0} left), otherwise attacks` : `attacks your target${ALLIES[G.ally.key].multi ? ' twice' : ''}`}</span></span></div>`;
   }
   c.foes.forEach((f, i) => {
     const down = f.hp <= 0 || f.st.turned || f.st.fled;
@@ -187,7 +187,7 @@ function renderCombat(){
   ['potion', 'poultice', 'candle'].forEach(id => {
     if (!has(id)) return;
     other.push({label:ITEMS[id].name, sub:`${fast ? 'Bonus' : 'Use'} · ${ch.inv[id]} left`, fn:() => itemAction(id), cls:fast ? 'bonus' : '', off:fast && c.bonusUsed});
-    if (ITEMS[id].use === 'heal' && G.ally && G.ally.hp < G.ally.max) other.push({label:`Give ${G.ally.name} a ${ITEMS[id].name}`, sub:`${fast ? 'Bonus' : 'Use'} · revives him if down`, fn:() => itemAction(id, true), cls:fast ? 'bonus' : '', off:fast && c.bonusUsed});
+    if (ITEMS[id].use === 'heal' && G.ally && G.ally.hp < G.ally.max) other.push({label:`Give ${G.ally.name} a ${ITEMS[id].name}`, sub:`${fast ? 'Bonus' : 'Use'} · revives ${pron(ALLIES[G.ally.key], 'o')} if down`, fn:() => itemAction(id, true), cls:fast ? 'bonus' : '', off:fast && c.bonusUsed});
   });
   if (!c.cfg.noFlee) other.push({label:'Flee', sub:`Athletics or Acrobatics DC ${10 + alive().length}`, fn:fleeAction});
   groups.push(['Other', other]);
@@ -261,9 +261,10 @@ function companionHTML(){
   const pct = clamp(G.ally.hp / G.ally.max * 100, 0, 100);
   return `<div class="comp"><div class="ct"><b>${esc(G.ally.name)}</b><span class="lbl2">Companion · ${a.kind}</span></div>
     <div class="hpbox"><div class="top2"><span class="lbl2">Hit points</span><span><b>${G.ally.hp}</b> / ${G.ally.max}</span></div><div class="bar me${pct <= 35 ? ' low' : ''}"><i style="width:${pct}%"></i></div></div>
-    <div class="meta"><span>AC <b>${a.ac}</b></span><span>${a.attack.name} <b>${sgn(a.attack.toHit)}</b>, ${a.attack.dmg} ${a.attack.type}</span></div>
-    <p>${a.desc} A short rest restores him fully.</p>
-    ${hurt ? `<div class="row">${has('potion') ? `<button type="button" class="mini" data-ally-potion="1" ${ok ? '' : 'disabled'}>Give him a potion</button>` : ''}${cure ? `<button type="button" class="mini" data-ally-cure="${cure}" ${ok && G.char.slots.left > 0 ? '' : 'disabled'}>Cast ${SPELLS[cure].name} on him</button>` : ''}</div>` : ''}
+    <div class="meta"><span>AC <b>${a.ac}</b></span><span>${a.attack.name} <b>${sgn(a.attack.toHit)}</b>, ${a.attack.dmg} ${a.attack.type}${a.multi ? `, ${a.multi} times a turn` : ''}</span>${a.heal ? `<span>${a.heal.name} <b>${G.ally.heals || 0}</b> of ${a.heal.uses}</span>` : ''}</div>
+    <p>${a.desc} A short rest restores ${pron(a, 'o')} fully.</p>
+    ${a.heal && G.char.hp < G.char.maxHp && (G.ally.heals || 0) > 0 && G.ally.hp > 0 ? `<div class="row"><button type="button" class="mini" data-ally-heal="1" ${ok ? '' : 'disabled'}>Ask ${esc(G.ally.name)} to heal you</button></div>` : ''}
+    ${hurt ? `<div class="row">${has('potion') ? `<button type="button" class="mini" data-ally-potion="1" ${ok ? '' : 'disabled'}>Give ${pron(a, 'o')} a potion</button>` : ''}${cure ? `<button type="button" class="mini" data-ally-cure="${cure}" ${ok && G.char.slots.left > 0 ? '' : 'disabled'}>Cast ${SPELLS[cure].name} on ${pron(a, 'o')}</button>` : ''}</div>` : ''}
   </div>`;
 }
 function renderSheet(){
@@ -273,6 +274,12 @@ function renderSheet(){
     p.innerHTML = companionHTML() + sheetCore(ch, false);
     p.querySelectorAll('[data-ally-potion]').forEach(b => b.addEventListener('click', () => { log('you', `Give ${esc(G.ally.name)} a potion`); useItem('potion', true); render(); autosave(); }));
     p.querySelectorAll('[data-ally-cure]').forEach(b => b.addEventListener('click', () => castOutside(b.dataset.allyCure, true)));
+    p.querySelectorAll('[data-ally-heal]').forEach(b => b.addEventListener('click', () => {
+      const a = ALLIES[G.ally.key]; G.ally.heals--;
+      log('you', `Ask ${esc(G.ally.name)} for healing`);
+      heal(a.heal.dice, `${esc(G.ally.name)} casts ${a.heal.name}`);
+      render(); autosave();
+    }));
     p.querySelectorAll('[data-cast]').forEach(b => b.addEventListener('click', () => castOutside(b.dataset.cast)));
     p.querySelectorAll('[data-sw]').forEach(b => b.addEventListener('click', () => { log('you', 'Use Second Wind'); secondWind(); }));
   } else if (ui.tab === 'pack'){

@@ -27,12 +27,20 @@ Every time you change a file on GitHub, the website updates by itself within a m
 * **Character creation** with four peoples, four classes, five backgrounds, standard array or 4d6, and your own backstory (type it or load a .txt file).
 * **PDF character sheet import** from a *fillable* 5e sheet: name, class and level, ability scores, hit points, XP, gold, weapons, and backstory.
 * **Equipment and shops.** Buy, sell, wear, and ready any SRD weapon or armor. If you aren't proficient with a weapon, your proficiency bonus doesn't add to the attack. Untrained armor gives disadvantage on Strength and Dexterity rolls and blocks spellcasting.
-* **A companion,** Brindle the mastiff, who fights beside you.
+* **Companions.** Brindle the mastiff joins you first. You can hire others from the board in Greywater, Bramblewick, or at Captain Doyle's, and meet some on the road:
+  * Tess Marrow, a scout who shoots twice a turn and sharpens your Perception
+  * Brother Tamsin, an acolyte who heals you when you drop to half your hit points
+  * Garrick Stone, a sellsword in mail and shield
+  * Ruth Ashdown, a veteran who only works for heroes of level 4 or higher
+
+  One companion travels with you at a time. Anyone else waits in town until you call them back for free.
+* **People.** All 21 SRD people templates, from Commoner to Archmage, with their real statistics and actions: spells that call for saving throws, poisoned blades, parries, sneak attacks, reckless rages, magic resistance, and healers who patch up their friends. The game gives them original names and stories, and you meet them on the road: bandits, the bandit captain Mag Rusk, cultists in blank white masks, pilgrims, and hill-clan hunters. These roadside fights are tuned by your level instead of being scaled.
 * **Combat** with surprise, stealth ambushes, enemies who flee, "strike to subdue", captives you can question, multiattack monsters, and death saving throws.
 * **Random encounters** for every area, plus a **Map** tab of the places you have found.
 * **Library:**
   * **Adventures:** load a one-shot from a .txt file (see below).
   * **Bestiary:** add your own monsters by hand, or paste a stat block from your book and the game reads it. You choose which areas they appear in.
+  * **People:** every people template with its full statistics, a **practice bout** against any of them (no XP, nobody dies, your hit points come back after), the companions for hire, and the named characters you have met so far.
   * **File format:** the full guide to writing adventures.
 * **Solo GM tools:** roll any check, start a fight with any monster, and award gold, XP, damage, or healing.
 
@@ -53,12 +61,13 @@ Your hero carries over into the adventure. When you are done, choose **Leave thi
 index.html                 the page; loads the scripts below in order
 css/style.css              all styling (colors are tokens at the top)
 js/rules.js                races, classes, backgrounds, spells, items, weapons, armor, shops
-js/monsters.js             monster statistics and companions
+js/monsters.js             monster statistics, the SRD people templates, and companions
 story/encounters.js        random encounter tables
 story/story.js             chapter names, area names, journal, lore
 story/chapter1.js          Chapter One: The Marsh Road
 story/chapter2.js          Chapter Two: The Sunken Shrine
 story/chapter3.js          Chapter Three: The Saltreach Gaol
+story/npcs.js              hiring board, the cast of named characters, roadside people, captives
 js/engine.js               dice, checks, rewards, hazards, outcomes, rests, saving
 js/combat.js               turns, attacks, spells, combat actions
 js/ui.js                   story log, choices, character sheet, character creation
@@ -111,17 +120,29 @@ Choices, encounter results, and check results all use the same small set of keys
 | `damage` | `{dice, type, save}` |
 | `choices` | a one-time menu, for NPCs |
 | `shop` | open a shop from `SHOPS` |
-| `ally` | a companion from `ALLIES` joins you |
+| `ally` | a companion from `ALLIES` joins you (the current one waits in town) |
+| `bench` | your companion goes to wait in town |
 | `fn` | any custom code |
 
-Options also take `label`, `if` (a condition), and `once`.
+Options also take `label`, `if` (a condition), and `once`. Encounter table entries take `if` and `once` too. `choices` can be a function of `G` that builds the menu when it opens.
+
+### People in fights
+
+Any fight can use a people template and give it a name:
+
+```js
+fight:{foes:[{key:'bandit_captain', name:'Mag Rusk', boss:true}, 'bandit', 'bandit'], rout:1, captive:'bandit_talk'}
+```
+
+Add `noScale:true` to a fight to skip level scaling. The template keys are `commoner, acolyte, priest, cultist, cult_fanatic, druid, bandit, bandit_captain, thug, guard, clan_warrior, noble, scout, spy, berserker, veteran, knight, gladiator, mage, assassin, archmage`. The top of the people section in `js/monsters.js` explains the extra keys (`actions`, `parry`, `sneak`, `resist`) if you want to build your own.
 
 ## House rules for solo play
 
 * **Stubborn Hero:** once per short rest, when you would drop to 0 hit points, you drop to 1 instead.
 * **Mage Armor:** wizards keep it up between adventures (AC 13 + Dexterity with no armor).
 * **Levels:** characters advance to any level, but class features are built in up to level 3. Spell slots are all treated as 1st level.
-* **Companions** recover fully on a short rest and get back up after a fight you win.
+* **Companions** recover fully on a short rest and get back up after a fight you win. Their healing spells come back on a long rest.
+* **People templates** follow the SRD stat blocks. A few things are simplified: spell slots become a limit per fight, area spells hit you and your companion, and support spells like Bless are left out.
 
 ## Saves
 

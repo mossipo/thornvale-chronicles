@@ -18,7 +18,7 @@ const pick = a => a[Math.floor(Math.random() * a.length)];
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
 function freshGame(){
-  return {v:1, char:null, scene:null, flags:{}, visits:{}, alert:0, log:[], mode:'create', combat:null, choices:null, down:null, ally:null, captive:null, shop:null, module:null};
+  return {v:1, char:null, scene:null, flags:{}, visits:{}, alert:0, log:[], mode:'create', combat:null, choices:null, down:null, ally:null, captive:null, shop:null, module:null, bench:{}};
 }
 let G = freshGame();
 const ui = {tab:'sheet', diceHist:[], gm:false, gmFoes:[], editStory:false, lib:'adv', editMonster:null};
@@ -221,7 +221,7 @@ function doCheck(ch){
   const abilUsed = chosen ? SKILLS[chosen][1] : (ch.save || ch.ability);
   if (!armorTrained() && (abilUsed === 'str' || abilUsed === 'dex')){ dis = true; extra += ' Untrained armor: disadvantage.'; }
   if (chosen === 'stealth' && wornArmor() && wornArmor().stealthDis){ dis = true; extra += ` ${wornArmor().name}: disadvantage on Stealth.`; }
-  if (skills.includes('perception') && allyUp() && ALLIES[G.ally.key].keen){ adv = true; extra = ` ${esc(G.ally.name)}'s nose helps.`; }
+  if (skills.includes('perception') && allyUp() && ALLIES[G.ally.key].keen){ adv = true; extra = ` ${esc(G.ally.name)}'s ${G.ally.key === 'brindle' ? 'nose helps' : 'sharp eyes help'}.`; }
   const baseDC = typeof ch.dc === 'function' ? ch.dc(G) : ch.dc;
   let dc = baseDC, vs = `DC ${baseDC}`;
   if (ch.vsFoes){ dc = foesPP(ch.vsFoes); vs = `passive Perception ${dc}`; }
@@ -328,7 +328,8 @@ function wake(robbed){
   G.char.hp = Math.max(1, G.char.hp);
   if (robbed && G.down.guarded){
     robbed = false;
-    log('text', `Darkness. Then a warm, wet tongue on your face. ${esc(G.ally.name)} stood over you until your foes gave up and left. You wake with 1 hit point and every coin still in your purse.`);
+    const ga = ALLIES[G.ally.key];
+    log('text', `Darkness. Then ${ga.guard || 'a familiar voice'}. ${esc(G.ally.name)} stood over you until your foes gave up and left. You wake with 1 hit point and every coin still in your purse.`);
   }
   if (G.ally && G.ally.hp <= 0) G.ally.hp = 1;
   if (robbed){
@@ -348,10 +349,26 @@ function die(){
 
 /* ---------- companions ---------- */
 const allyUp = () => !!(G.ally && G.ally.hp > 0);
+/* One companion travels with you at a time. Anyone else you have hired
+   waits in town (G.bench) until you call them back at a hiring board. */
 function joinAlly(key){
   const a = ALLIES[key];
-  G.ally = {key, name:a.name, hp:a.hp, max:a.hp};
-  log('good', `${esc(a.name)} joins you as a companion.`);
+  if (!a || (G.ally && G.ally.key === key)) return;
+  G.bench = G.bench || {};
+  if (G.ally) benchAlly();
+  const prev = G.bench[key];
+  delete G.bench[key];
+  G.ally = prev ? Object.assign(prev, {hp:prev.max}) : {key, name:a.name, hp:a.hp, max:a.hp};
+  if (a.heal && G.ally.heals == null) G.ally.heals = a.heal.uses;
+  log('good', `${esc(a.name)} ${prev ? 'rejoins you' : 'joins you as a companion'}.`);
+}
+function benchAlly(){
+  if (!G.ally) return;
+  const a = ALLIES[G.ally.key];
+  G.bench = G.bench || {};
+  G.bench[G.ally.key] = G.ally;
+  log('sys', `${esc(G.ally.name)} ${G.ally.key === 'brindle' ? "trots back to Marta's yard" : 'heads back to town'} to wait for you. You can call ${pron(a, 'o')} back from any hiring board.`);
+  G.ally = null;
 }
 function healAlly(expr, why){
   const r = rollDice(expr), before = G.ally.hp;
@@ -376,10 +393,11 @@ function resolve(o){
   if (o.give) give(o.give);
   if (o.ally) joinAlly(o.ally);
   if (o.allyLeave && G.ally){ log('sys', `${esc(G.ally.name)} leaves you.`); G.ally = null; }
+  if (o.bench) benchAlly();
   if (o.captive && CAPTIVES[o.captive]){ G.captive = o.captive; }
   if (o.damage){ if (applyHazard(o.damage)) return; }
   if (o.check){ const ok = doCheck(o.check); resolve(ok ? o.check.pass : o.check.fail); return; }
-  if (o.choices){ G.choices = o.choices; render(); return; }
+  if (o.choices){ G.choices = typeof o.choices === 'function' ? o.choices(G) : o.choices; render(); return; }
   if (o.shop && SHOPS[o.shop]){ G.shop = o.shop; render(); return; }
   if (o.fight){ startCombat(typeof o.fight === 'function' ? o.fight(G) : o.fight); return; }
   if (o.go){ goTo(typeof o.go === 'function' ? o.go(G) : o.go); return; }
@@ -422,7 +440,7 @@ function wander(){
   if (table.alert) G.alert = Math.min(6, G.alert + 1);
   const row = table.rows.find(r => n >= r.range[0] && n <= r.range[1]) || {label:'Quiet', pick:[{text:`Nothing stirs.`}]};
   log('roll', `Encounter roll: d20 <b>${raw}</b>${shift ? ` minus ${shift} for ${(table.alertName || 'noise').toLowerCase()}` : ''} = <b>${n}</b> <em class="${row.label === 'Hostile' || row.label === 'Trap' || row.label === 'Hazard' ? 'no' : 'ok'}">${row.label}</em>`);
-  const pool = row.pick.filter(o => !o.once || !G.flags['once_' + o.once]);
+  const pool = row.pick.filter(o => (!o.once || !G.flags['once_' + o.once]) && (!o.if || o.if(G)));
   if (row.label === 'Hostile') BESTIARY.filter(m => (m.areas || []).includes(sc.area)).forEach(m => pool.push({text:`A ${esc(m.name)} appears!`, fight:{foes:['my_' + m.id]}}));
   const o = pool.length ? pick(pool) : {text:`You search carefully, but find nothing new.`};
   if (o.once) G.flags['once_' + o.once] = true;
@@ -451,7 +469,7 @@ function shortRest(){
   }
   if (!spent && ch.hp < ch.maxHp) log('sys', 'You have no Hit Dice left to spend. A long rest in town restores them.');
   resetUses(ch, 'short');
-  if (G.ally && G.ally.hp < G.ally.max){ G.ally.hp = G.ally.max; log('good', `${esc(G.ally.name)} licks his wounds and is back to full strength.`); }
+  if (G.ally && G.ally.hp < G.ally.max){ G.ally.hp = G.ally.max; log('good', `${esc(G.ally.name)} ${ALLIES[G.ally.key].rest || 'is back to full strength'}.`); }
   if (hasFeat('arcaneRecovery') && ch.uses.arcaneRecovery > 0 && ch.slots && ch.slots.left < ch.slots.max){
     ch.uses.arcaneRecovery--; ch.slots.left++;
     log('good', 'Arcane Recovery: you regain one spell slot.');
@@ -466,7 +484,7 @@ function longRest(){
   ch.hd.left = Math.min(ch.hd.max, ch.hd.left + Math.max(1, Math.floor(ch.hd.max / 2)));
   if (ch.slots) ch.slots.left = ch.slots.max;
   resetUses(ch, 'long');
-  if (G.ally) G.ally.hp = G.ally.max;
+  if (G.ally){ G.ally.hp = G.ally.max; const a = ALLIES[G.ally.key]; if (a.heal) G.ally.heals = a.heal.uses; }
   G.alert = 0;
   log('good', 'Hit points, spell slots, and abilities restored.');
   render(); autosave();

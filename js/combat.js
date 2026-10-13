@@ -17,6 +17,7 @@ function startCombat(cfg){
     counts[name] = (counts[name] || 0) + 1;
     return {uid:i, key:spec.key, base:name, name, hp, max:hp, ac:spec.ac || m.ac, m, st:{}, boss:!!spec.boss, xp:spec.xp || m.xp};
   });
+  if (cfg.noScale) foes.noScale = true;
   scaleFoes(foes);
   foes.forEach(f => { if (counts[f.base] > 1){ const k = foes.filter(x => x.base === f.base).indexOf(f); f.name = `${f.base} ${'ABCDEF'[k]}`; } });
   G.mode = 'combat'; G.choices = null;
@@ -44,7 +45,7 @@ function startCombat(cfg){
 /* Fights scale to the hero. Each level above a chapter's suggested level makes
    foes tougher; each level below makes them a little weaker. */
 function scaleFoes(foes){
-  if (G.scaling === false || !G.char) return;
+  if (G.scaling === false || !G.char || foes.noScale) return;
   const sc = STORY[G.scene];
   if (!sc || sc.module) return;
   const rec = CHAPTER_LEVEL[sc.chapter];
@@ -74,6 +75,7 @@ function runCombat(){
     if (who === 'player'){
       if (c.round === 1 && c.playerSkip){ advancePhase(); continue; }
       c.dodge = false; c.bonusUsed = false; c.sneakUsed = false; c.extra = false; c.surged = false;
+      if (c.prone){ c.prone = false; log('sys', 'You get back on your feet.'); }
       render();
       return;
     }
@@ -96,6 +98,7 @@ function enemyPhase(){
     if (G.mode !== 'combat') return;
     if (f.hp <= 0 || f.st.turned || f.st.fled) continue;
     if (f.st.asleep){ log('sys', `${esc(f.name)} snores.`); continue; }
+    f.st.parried = false;
     if (f.st.prone){ f.st.prone = false; log('sys', `${esc(f.name)} scrambles back to its feet.`); }
     if (f.m.special.includes('nimble') && f.hp <= f.max / 2 && !f.st.hidden && Math.random() < .35){
       f.st.hidden = true; log('sys', `${esc(f.name)} ducks behind cover. Your next attack on it has disadvantage.`); continue;
@@ -103,44 +106,143 @@ function enemyPhase(){
     enemyAttack(f);
   }
 }
+/* ---------- how foes act ----------
+   A monster's turn is one routine: m.actions (weighted) for people
+   templates, or its attack repeated m.multi times for simple monsters. */
+function routinesOf(m){
+  if (m.actions && m.actions.length) return m.actions;
+  const list = m.attacks && m.attacks.length ? m.attacks : [m.attack];
+  const times = Math.max(1, m.multi || 1);
+  return [{w:1, strikes:Array.from({length:times}, (_, i) => list[i % list.length])}];
+}
+function pickWeighted(list){
+  const tot = list.reduce((s, r) => s + (r.w || 1), 0);
+  let x = Math.random() * tot;
+  for (const r of list){ x -= (r.w || 1); if (x < 0) return r; }
+  return list[list.length - 1];
+}
+const usesLeft = (f, s) => !s.uses || ((f.st.used || {})[s.name] || 0) < s.uses;
+function useUp(f, s){ if (s.uses){ f.st.used = f.st.used || {}; f.st.used[s.name] = (f.st.used[s.name] || 0) + 1; } }
+function foeToHeal(){ return alive().filter(o => o.hp <= o.max / 2).sort((a, b) => a.hp / a.max - b.hp / b.max)[0]; }
 function enemyAttack(f){
-  const list = f.m.attacks && f.m.attacks.length ? f.m.attacks : [f.m.attack];
-  const times = Math.max(1, f.m.multi || 1);
-  let martialUsed = false;
-  for (let i = 0; i < times; i++){
+  const all = routinesOf(f.m);
+  let ready = all.filter(r => r.heal ? usesLeft(f, r) && !!foeToHeal() : r.strikes.every(s => usesLeft(f, s)));
+  if (!ready.length) ready = all.filter(r => !r.heal);
+  const r = pickWeighted(ready);
+  if (r.heal){
+    const t = foeToHeal(); useUp(f, r);
+    const dr = rollDice(r.heal), before = t.hp;
+    t.hp = Math.min(t.max, t.hp + dr.total);
+    log('bad', `${esc(f.name)} casts ${esc(r.name)}${t === f ? '' : ' on ' + esc(t.name)}: ${t === f ? 'it' : esc(t.name)} regains <b>${t.hp - before}</b> hit points (${dr.text}).`);
+    return;
+  }
+  if (f.m.special.includes('reckless') && !f.st.reckless){ f.st.reckless = true; log('sys', `${esc(f.name)} fights recklessly: its attacks have advantage, and so do yours against it.`); }
+  const st = {martialUsed:false, sneakUsed:false};
+  for (const s of r.strikes){
     if (G.mode !== 'combat') return;
-    martialUsed = enemyStrike(f, list[i % list.length], martialUsed);
+    if (!usesLeft(f, s)) continue;
+    useUp(f, s);
+    if (s.save) enemySaveStrike(f, s); else enemyStrike(f, s, st);
   }
 }
-function enemyStrike(f, a, martialUsed){
+/* damage that lands on the hero or the companion */
+function hurtPlayer(n, type, why){
+  if (RACES[G.char.race].resist && RACES[G.char.race].resist.includes(type)){ n = Math.floor(n / 2); why += ', halved by your resilience'; }
+  G.char.hp -= n;
+  log('bad', `You take <b>${n}</b> ${type} damage (${why}).`);
+  if (G.char.hp <= 0 && G.combat && G.combat.cfg.spar){ endSpar(false); return true; }
+  if (G.char.hp <= 0 && !stubborn()){ playerDown(G.combat ? G.combat.cfg.flee || G.scene : G.scene); return true; }
+  return false;
+}
+function hurtAlly(n, type, why){
+  G.ally.hp = Math.max(0, G.ally.hp - n);
+  log('bad', `${esc(G.ally.name)} takes <b>${n}</b> ${type} damage (${why}).`);
+  if (G.ally.hp <= 0){ const a = ALLIES[G.ally.key]; log('bad', `<b>${esc(G.ally.name)} goes down!</b> ${cap(pron(a))} will recover after the fight if you win.`); }
+}
+const cap = t => t.charAt(0).toUpperCase() + t.slice(1);
+const allySaveRoll = () => d(20) + 1;
+/* a spell or effect that calls for a saving throw instead of an attack roll */
+function enemySaveStrike(f, s){
+  const area = s.half;
+  const dr = rollDice(s.dmg);
+  const atAlly = !area && allyUp() && Math.random() < 0.4;
+  log('sys', `${esc(f.name)} casts ${esc(s.name)}${area ? '!' : ' at ' + (atAlly ? esc(G.ally.name) : 'you') + '.'}`);
+  const hitsAlly = area ? allyUp() : atAlly;
+  const hitsYou = area || !atAlly;
+  let n = dr.total + Math.max(0, f.bonusDmg || 0);
+  if (hitsAlly){
+    const sv = allySaveRoll(), ok = sv >= s.dc;
+    log('roll', `${esc(G.ally.name)} ${ABIL_NAME[s.save]} save: <b>${sv}</b> vs DC ${s.dc} <em class="${ok ? 'ok' : 'no'}">${ok ? (s.half ? 'Half damage' : 'Dodged') : 'Failed'}</em>`);
+    const m = ok ? (s.half ? Math.floor(n / 2) : 0) : n;
+    if (m > 0) hurtAlly(m, s.type, `${esc(s.name)} ${dr.text}`);
+  }
+  if (hitsYou){
+    const ok = doCheck({save:s.save, dc:s.dc});
+    const m = ok ? (s.half ? Math.floor(n / 2) : 0) : n;
+    if (m > 0) hurtPlayer(m, s.type, `${esc(s.name)} ${dr.text}${ok ? ', halved' : ''}`);
+    else log('good', `You avoid the ${esc(s.name)}.`);
+  }
+}
+function enemyStrike(f, a, st){
   const c = G.combat;
+  if (typeof st !== 'object') st = {martialUsed:!!st, sneakUsed:false};
   const allies = c.foes.some(o => o !== f && o.hp > 0 && !o.st.asleep && !o.st.turned && !o.st.fled);
   const atAlly = allyUp() && Math.random() < 0.4;
   const tAC = atAlly ? ALLIES[G.ally.key].ac : ac();
   let adv = false, dis = false;
   if (f.m.special.includes('pack') && (allies || allyUp())) adv = adv || allies;
   if (f.st.hidden){ adv = true; f.st.hidden = false; }
+  if (f.st.reckless) adv = true;
+  if (f.m.special.includes('assassinate') && c.round === 1) adv = true;
+  if (c.prone && !atAlly && !/bow|thrown|bolt|flame/i.test(a.name)) adv = true;
   if (c.dodge && !atAlly) dis = true;
   const r = monsterD20(adv, dis);
   const toHit = a.toHit + (f.bonusHit || 0);
-  const total = r.nat + toHit, crit = r.nat === 20;
-  const hit = crit || (r.nat !== 1 && total >= tAC);
+  const total = r.nat + toHit;
+  const hit = r.nat === 20 || (r.nat !== 1 && total >= tAC);
+  const crit = r.nat === 20 || (hit && f.m.special.includes('assassinate') && c.round === 1 && c.playerSkip && !atAlly);
   log('roll', `${esc(f.name)} ${a.name} at ${atAlly ? esc(G.ally.name) : 'you'}: ${diceHTML(r)} ${sgn(toHit)} = <b>${total}</b> vs AC ${tAC} <em class="${hit ? 'no' : 'ok'}">${crit ? 'Critical hit!' : hit ? 'Hit' : 'Miss'}</em>`);
-  if (!hit) return martialUsed;
+  if (!hit) return st.martialUsed;
   const dr = rollDice(a.dmg, crit);
   let n = Math.max(1, dr.total + (f.bonusDmg || 0)), extra = f.bonusDmg ? ` ${sgn(f.bonusDmg)} level scaling` : '';
-  if (f.m.special.includes('martial') && allies && !martialUsed){ const m = rollDice('2d6', crit); n += m.total; extra = ` + Martial Advantage ${m.text}`; martialUsed = true; }
+  if (f.m.special.includes('martial') && allies && !st.martialUsed){ const m = rollDice('2d6', crit); n += m.total; extra += ` + Martial Advantage ${m.text}`; st.martialUsed = true; }
+  if (f.m.sneak && !st.sneakUsed && r.net !== 'dis' && (r.net === 'adv' || allies)){ const s = rollDice(f.m.sneak, crit); n += s.total; extra += ` + Sneak Attack ${s.text}`; st.sneakUsed = true; }
+  const why = `${dr.text}${extra}`;
   if (atAlly){
-    G.ally.hp = Math.max(0, G.ally.hp - n);
-    log('bad', `${esc(G.ally.name)} takes <b>${n}</b> ${a.type} damage (${dr.text}${extra}).`);
-    if (G.ally.hp <= 0) log('bad', `<b>${esc(G.ally.name)} goes down!</b> He will recover after the fight if you win.`);
-    return martialUsed;
+    hurtAlly(n, a.type, why);
+    if (a.rider && G.ally.hp > 0){
+      const rd = rollDice(a.rider.dmg), sv = allySaveRoll(), ok = sv >= a.rider.dc;
+      log('roll', `${esc(G.ally.name)} ${ABIL_NAME[a.rider.save]} save: <b>${sv}</b> vs DC ${a.rider.dc} <em class="${ok ? 'ok' : 'no'}">${ok ? 'Half' : 'Failed'}</em>`);
+      const m = ok && a.rider.half ? Math.floor(rd.total / 2) : ok ? 0 : rd.total;
+      if (m) hurtAlly(m, a.rider.type, rd.text);
+    }
+    return st.martialUsed;
   }
-  if (RACES[G.char.race].resist && RACES[G.char.race].resist.includes(a.type)) n = Math.floor(n / 2);
-  G.char.hp -= n;
-  log('bad', `You take <b>${n}</b> ${a.type} damage (${dr.text}${extra}).`);
-  if (G.char.hp <= 0 && !stubborn()) playerDown(c.cfg.flee || G.scene);
-  return martialUsed;
+  if (hurtPlayer(n, a.type, why)) return st.martialUsed;
+  if (a.rider){
+    const rd = rollDice(a.rider.dmg), ok = doCheck({save:a.rider.save, dc:a.rider.dc});
+    const m = ok && a.rider.half ? Math.floor(rd.total / 2) : ok ? 0 : rd.total;
+    if (m && hurtPlayer(m, a.rider.type, `${rd.text}${ok ? ', halved' : ''}`)) return st.martialUsed;
+  }
+  if (a.prone && !c.prone){
+    if (!doCheck({save:a.prone.save, dc:a.prone.dc})){ c.prone = true; log('bad', 'You are knocked prone! Melee attacks against you have advantage until you stand on your turn.'); }
+  }
+  return st.martialUsed;
+}
+/* Parry: some foes add to their AC against one melee hit each round. */
+function parries(f, total, crit, melee){
+  if (!melee || crit || !f.m.parry || f.st.parried || f.hp <= 0 || f.st.asleep) return false;
+  if (total >= f.ac + f.m.parry) return false;
+  f.st.parried = true;
+  log('sys', `${esc(f.name)} parries! (+${f.m.parry} AC turns the hit into a miss.)`);
+  return true;
+}
+/* a foe's saving throw against your spell */
+function foeSave(f, a, spell){
+  const mr = spell && f.m.special.includes('magicres');
+  const r = monsterD20(mr, false);
+  const total = r.nat + (f.m.save[a] || 0) + (f.bonusHit > 0 ? f.bonusHit : 0);
+  return {total, text:`${diceHTML(r)} ${sgn(f.m.save[a] || 0)} = <b>${total}</b>${mr ? ' (Magic Resistance)' : ''}`};
 }
 function target(){
   const c = G.combat;
@@ -152,6 +254,7 @@ function damageFoe(f, n, type, src, how={}){
   let note = '';
   if (f.m.vuln && f.m.vuln.includes(type)){ n *= 2; note = ' Vulnerable!'; }
   if (f.m.immune && f.m.immune.includes(type)){ n = 0; note = ' Immune.'; }
+  else if (f.m.resist && f.m.resist.includes(type)){ n = Math.floor(n / 2); note = ' Resisted, half damage.'; }
   f.hp -= n;
   log('good', `${src}: <b>${n}</b> ${type} damage to ${esc(f.name)}.${note}`);
   if (f.st.asleep && n > 0 && f.hp > 0){ f.st.asleep = false; log('sys', `${esc(f.name)} wakes up!`); }
@@ -172,13 +275,29 @@ function endAction(){
 }
 function allyTurn(){
   if (!allyUp() || !G.combat) return;
-  const a = ALLIES[G.ally.key], f = target();
-  if (!f) return;
-  const adv = !!f.st.asleep || !!f.st.prone || !!f.st.marked;
+  const a = ALLIES[G.ally.key];
+  /* a healer tends the hero first when the hero is badly hurt */
+  if (a.heal && (G.ally.heals || 0) > 0 && G.char.hp > 0 && G.char.hp <= G.char.maxHp / 2){
+    G.ally.heals--;
+    heal(a.heal.dice, `${esc(G.ally.name)} casts ${a.heal.name}`);
+    log('sys', `${esc(G.ally.name)} can heal ${G.ally.heals} more time${G.ally.heals === 1 ? '' : 's'} before a long rest.`);
+    return;
+  }
+  const times = Math.max(1, a.multi || 1);
+  for (let i = 0; i < times; i++){
+    const f = target();
+    if (!f) return;
+    allyStrike(a, f);
+  }
+}
+function allyStrike(a, f){
+  const adv = !!f.st.asleep || !!f.st.prone || !!f.st.marked || !!f.st.reckless;
   const r = monsterD20(adv, false);
-  const total = r.nat + a.attack.toHit, crit = r.nat === 20, hit = crit || (r.nat !== 1 && total >= f.ac);
+  const total = r.nat + a.attack.toHit, crit = r.nat === 20;
+  let hit = crit || (r.nat !== 1 && total >= f.ac);
   log('roll', `${esc(G.ally.name)} ${a.attack.name} at ${esc(f.name)}: ${diceHTML(r)} ${sgn(a.attack.toHit)} = <b>${total}</b> vs AC ${f.ac} <em class="${hit ? 'ok' : 'no'}">${crit ? 'Critical hit!' : hit ? 'Hit' : 'Miss'}</em>`);
   f.st.marked = false;
+  if (hit && parries(f, total, crit, !/bow|sling/i.test(a.attack.name))) hit = false;
   if (!hit) return;
   const dr = rollDice(a.attack.dmg, crit);
   damageFoe(f, dr.total, a.attack.type, `${esc(G.ally.name)} ${dr.text}`);
@@ -187,8 +306,27 @@ function allyTurn(){
     if (sv < a.trip){ f.st.prone = true; log('good', `${esc(f.name)} is knocked prone (Strength save ${sv}). Melee attacks against it have advantage.`); }
   }
 }
+/* A practice bout: blunted weapons, no XP, and everyone is patched up after. */
+function startSpar(key){
+  if (!G.char || G.mode !== 'explore' || !MONSTERS[key]) return false;
+  G.choices = null; G.shop = null;
+  log('you', `Practice bout against a ${esc(MONSTERS[key].name.toLowerCase())}`);
+  log('sys', 'Blunted weapons and a referee. Nobody dies, no XP is earned, and your hit points are restored when the bout ends.');
+  startCombat({foes:[key], spar:true, sparHP:G.char.hp, sparAlly:G.ally ? G.ally.hp : null, noScale:true});
+  return true;
+}
+function endSpar(won){
+  const cfg = G.combat.cfg;
+  G.combat = null; G.mode = 'explore';
+  G.char.hp = Math.max(1, cfg.sparHP);
+  if (G.ally && cfg.sparAlly != null) G.ally.hp = cfg.sparAlly;
+  log('round', won === true ? 'You win the bout' : won === false ? 'You yield' : 'Bout over');
+  say(won === true ? 'The referee raises your hand. Not bad at all.' : won === false ? 'The referee steps in before anyone gets hurt. Your opponent offers you a hand up.' : 'You step out of the ring.');
+  render(); autosave();
+}
 function winCombat(){
   const c = G.combat;
+  if (c.cfg.spar) return endSpar(true);
   const xp = c.foes.reduce((s, f) => s + f.xp, 0);
   log('round', 'Victory');
   G.combat = null; G.mode = 'explore';
@@ -208,15 +346,16 @@ function winCombat(){
 function playerAttack(i){
   const c = G.combat, w = weapons()[i], f = target();
   if (!f || !w) return;
-  const adv = c.hidden || !!f.st.marked || !!f.st.asleep || (w.melee && !!f.st.prone);
+  const adv = c.hidden || !!f.st.marked || !!f.st.asleep || (w.melee && !!f.st.prone) || !!f.st.reckless;
   const dis = !!f.st.hidden || (!w.melee && !!f.st.prone) || !armorTrained();
   const bonus = atkBonus(w);
   const r = d20test({mod:bonus, adv, dis});
   const nat20 = r.nat >= (hasFeat('improvedCritical') ? 19 : 20);
-  const hit = nat20 || (r.nat !== 1 && r.total >= f.ac);
+  let hit = nat20 || (r.nat !== 1 && r.total >= f.ac);
   const crit = nat20 || (hit && f.st.asleep && w.melee);
   log('roll', `${w.name} at ${esc(f.name)}: ${diceHTML(r)} ${sgn(bonus)} = <b>${r.total}</b> vs AC ${f.ac} <em class="${hit ? 'ok' : 'no'}">${crit ? 'Critical hit!' : hit ? 'Hit' : 'Miss'}</em>${r.note}`);
   c.hidden = false; f.st.marked = false; f.st.hidden = false;
+  if (hit && parries(f, r.total, crit, w.melee)) hit = false;
   if (hit){
     const dr = rollDice(w.dmg, crit);
     let n = dr.total + wAbil(w) + (w.bonus || 0), txt = `${w.name} ${dr.text} ${sgn(wAbil(w) + (w.bonus || 0))}`;
@@ -234,7 +373,7 @@ function castSpell(id, onAlly){
   const f = target();
   log('sys', `You cast ${sp.name}${sp.level ? ' (1 slot)' : ''}.`);
   if (sp.kind === 'attack'){
-    const adv = c.hidden || !!f.st.marked || !!f.st.asleep, dis = !!f.st.hidden || !!f.st.prone;
+    const adv = c.hidden || !!f.st.marked || !!f.st.asleep || !!f.st.reckless, dis = !!f.st.hidden || !!f.st.prone;
     const r = d20test({mod:spellAtk(), adv, dis});
     const crit = r.nat === 20, hit = crit || (r.nat !== 1 && r.total >= f.ac);
     log('roll', `${sp.name} at ${esc(f.name)}: ${diceHTML(r)} ${sgn(spellAtk())} = <b>${r.total}</b> vs AC ${f.ac} <em class="${hit ? 'ok' : 'no'}">${crit ? 'Critical hit!' : hit ? 'Hit' : 'Miss'}</em>${r.note}`);
@@ -245,9 +384,9 @@ function castSpell(id, onAlly){
       if (sp.mark && f.hp > 0){ f.st.marked = true; log('sys', `${esc(f.name)} glows with light. Your next attack on it has advantage.`); }
     }
   } else if (sp.kind === 'save'){
-    const sv = d(20) + (f.m.save[sp.save] || 0);
-    const ok = sv >= spellDC();
-    log('roll', `${esc(f.name)} ${ABIL_NAME[sp.save]} save: <b>${sv}</b> vs DC ${spellDC()} <em class="${ok ? 'no' : 'ok'}">${ok ? 'Saved' : 'Failed'}</em>`);
+    const sv = foeSave(f, sp.save, true);
+    const ok = sv.total >= spellDC();
+    log('roll', `${esc(f.name)} ${ABIL_NAME[sp.save]} save: ${sv.text} vs DC ${spellDC()} <em class="${ok ? 'no' : 'ok'}">${ok ? 'Saved' : 'Failed'}</em>`);
     if (!ok){ const dr = rollDice(sp.dmg); damageFoe(f, dr.total, sp.type, `${sp.name} ${dr.text}`); }
   } else if (sp.kind === 'missile'){
     for (let i = 0; i < sp.darts; i++){
@@ -271,9 +410,11 @@ function castSpell(id, onAlly){
     const dr = rollDice(sp.dmg);
     log('roll', `${sp.name}: ${dr.text} = <b>${dr.total}</b>`);
     alive().forEach(x => {
-      const sv = d(20) + (x.m.save[sp.save] || 0), ok = sv >= spellDC();
-      log('roll', `${esc(x.name)} ${ABIL_NAME[sp.save]} save: <b>${sv}</b> vs DC ${spellDC()} <em class="${ok ? 'no' : 'ok'}">${ok ? 'Half damage' : 'Failed'}</em>`);
-      damageFoe(x, ok ? Math.floor(dr.total / 2) : dr.total, sp.type, sp.name);
+      const sv = foeSave(x, sp.save, true), ok = sv.total >= spellDC();
+      const ev = sp.save === 'dex' && x.m.special.includes('evasion');
+      log('roll', `${esc(x.name)} ${ABIL_NAME[sp.save]} save: ${sv.text} vs DC ${spellDC()} <em class="${ok ? 'no' : 'ok'}">${ok ? (ev ? 'Evasion, no damage' : 'Half damage') : (ev ? 'Failed, Evasion halves it' : 'Failed')}</em>`);
+      const n = ok ? (ev ? 0 : Math.floor(dr.total / 2)) : (ev ? Math.floor(dr.total / 2) : dr.total);
+      if (n > 0) damageFoe(x, n, sp.type, sp.name);
     });
   } else if (sp.kind === 'heal'){
     castHeal(sp, onAlly);
@@ -330,8 +471,8 @@ function turnUndead(){
   G.char.uses.turnUndead--;
   log('sys', 'You raise your holy symbol and call on the light.');
   alive().filter(f => f.m.type === 'undead').forEach(f => {
-    const sv = d(20) + (f.m.save.wis || 0), ok = sv >= spellDC();
-    log('roll', `${esc(f.name)} Wisdom save: <b>${sv}</b> vs DC ${spellDC()} <em class="${ok ? 'no' : 'ok'}">${ok ? 'Resists' : 'Turned'}</em>`);
+    const sv = foeSave(f, 'wis', true), ok = sv.total >= spellDC();
+    log('roll', `${esc(f.name)} Wisdom save: ${sv.text} vs DC ${spellDC()} <em class="${ok ? 'no' : 'ok'}">${ok ? 'Resists' : 'Turned'}</em>`);
     if (!ok){ f.st.turned = true; log('good', `${esc(f.name)} flees from your light.`); }
   });
   endAction();
@@ -344,6 +485,7 @@ function fleeAction(){
   const r = d20test({mod:m});
   const ok = r.total >= dc;
   log('roll', `Flee (${SKILLS[k][0]}): ${diceHTML(r)} ${sgn(m)} = <b>${r.total}</b> vs DC ${dc} <em class="${ok ? 'ok' : 'no'}">${ok ? 'Escaped' : 'Cut off'}</em>${r.note}`);
+  if (ok && c.cfg.spar){ endSpar(null); return; }
   if (ok){
     const cfg = c.cfg;
     G.combat = null; G.mode = 'explore';
@@ -355,7 +497,7 @@ function fleeAction(){
 }
 
 /* ---------- saving ---------- */
-function snapshot(){ return JSON.stringify({v:G.v, char:G.char, scene:G.scene, flags:G.flags, visits:G.visits, alert:G.alert, ally:G.ally, captive:G.captive, module:G.module, bestiary:BESTIARY, log:G.log.slice(-120), mode:'explore'}); }
+function snapshot(){ return JSON.stringify({v:G.v, char:G.char, scene:G.scene, flags:G.flags, visits:G.visits, alert:G.alert, ally:G.ally, bench:G.bench, scaling:G.scaling, captive:G.captive, module:G.module, bestiary:BESTIARY, log:G.log.slice(-120), mode:'explore'}); }
 function writeSave(){ try { localStorage.setItem(SAVE_KEY, snapshot()); return true; } catch (e){ return false; } }
 function autosave(){ if (G.mode === 'explore' && G.char) writeSave(); }
 function readSave(){ try { const s = localStorage.getItem(SAVE_KEY); return s ? JSON.parse(s) : null; } catch (e){ return null; } }
