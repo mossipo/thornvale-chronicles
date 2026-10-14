@@ -15,16 +15,17 @@
    attack coming around it. */
 const COVER_AC = {half:2, three:5};
 const COVER_NAME = {half:'half cover', three:'three-quarters cover', full:'full cover'};
-const AREA_COVER = {town:'some', city:'some', wilds:'some', marsh:'some', jobwild:'some', boss:'some', well:'some',
-  tower:'lots', dungeon:'lots', crypt:'lots', gaol:'lots', sewer:'lots', ruins:'lots', docks:'lots'};
-const TERRAIN_TEXT = {open:'Open ground: there is no cover here for anyone.', some:'There is some cover here: half cover (+2 AC) or full cover.', lots:'There is plenty of cover here: three-quarters cover (+5 AC) or full cover.'};
+Object.assign(AREA_COVER, {town:'some', city:'some', wilds:'some', marsh:'some', jobwild:'some', boss:'some', well:'some',
+  tower:'lots', dungeon:'lots', crypt:'lots', gaol:'lots', sewer:'lots', ruins:'lots', docks:'lots'});
+const TERRAIN_TEXT = {open:'Open ground: there is no cover here for anyone.', some:'There is some cover here: half cover (+2 AC against ranged attacks and spells) or full cover.', lots:'There is plenty of cover here: three-quarters cover (+5 AC against ranged attacks and spells) or full cover.'};
 function terrainOf(cfg){
   const sc = STORY[G.scene];
   return cfg.cover || (sc && sc.cover) || (sc && AREA_COVER[sc.area]) || 'some';
 }
 const partialCover = (c=G.combat) => c && c.terrain === 'lots' ? 'three' : c && c.terrain === 'some' ? 'half' : null;
 const coverAC = k => COVER_AC[k] || 0;
-const foeAC = f => f.ac + coverAC(f.st.cover) + (f.st.shieldAC || 0);
+/* partial cover only protects against ranged attacks and spells: a foe who closes to melee gets around it */
+const foeAC = (f, melee) => f.ac + (melee ? 0 : coverAC(f.st.cover)) + (f.st.shieldAC || 0);
 const smartFoe = f => (f.m.save.int || 0) >= -1 && !['beast', 'ooze', 'construct'].includes(f.m.type);
 const rangedStrike = a => !!(a.missile || a.save) || /bow|crossbow|thrown|javelin|bolt|flame|ray|sling|dart|missile/i.test(a.name);
 const foeHasRanged = f => routinesOf(f.m).some(r => (r.strikes || []).some(rangedStrike));
@@ -55,10 +56,10 @@ function castShield(why){
   log('good', `<b>Shield!</b> ${why} A shimmering barrier springs up: +5 AC until your next turn (1 slot, ${G.char.slots.left} left).`);
 }
 /* a foe's Shield spell or deflection, as its reaction */
-function foeShield(f, total){
+function foeShield(f, total, melee){
   if (f.st.parried || f.hp <= 0 || f.st.asleep) return false;
   if (shieldUses(f) - ((f.st.used || {}).Shield || 0) <= 0) return false;
-  if (total !== null && total >= foeAC(f) + 5) return false;
+  if (total !== null && total >= foeAC(f, melee) + 5) return false;
   f.st.used = f.st.used || {}; f.st.used.Shield = (f.st.used.Shield || 0) + 1;
   f.st.parried = true; f.st.shieldAC = 5;
   log('sys', `${esc(f.name)} snaps up a <b>Shield</b> spell! ${total === null ? 'Your darts burst harmlessly against it.' : '+5 AC turns your hit into a miss.'}`);
@@ -75,7 +76,7 @@ function takeCover(full){
   const c = G.combat;
   if (full){ c.pcover = 'full'; log('sys', 'You use your turn to get behind full cover. No attack, spell, or dart can reach you there, but melee foes may come around it.'); endAction(); return; }
   c.pcover = partialCover(c); c.movedCover = true;
-  log('sys', `You move into ${COVER_NAME[c.pcover]}: +${coverAC(c.pcover)} AC and Dexterity saves. Moving costs you nothing; you can still act.`);
+  log('sys', `You move into ${COVER_NAME[c.pcover]}: +${coverAC(c.pcover)} AC against ranged attacks and spells, and on Dexterity saves. Moving costs you nothing; you can still act.`);
   render();
 }
 function startCombat(cfg){
@@ -107,7 +108,7 @@ function startCombat(cfg){
     const hp = spec.hp || m.hp;
     const name = spec.name || m.name;
     counts[name] = (counts[name] || 0) + 1;
-    return {uid:i, key:spec.key, base:name, name, hp, max:hp, ac:spec.ac || m.ac, m, st:{}, boss:!!spec.boss, xp:spec.xp || m.xp};
+    return {uid:i, key:spec.key, base:name, name, hp, max:hp, ac:spec.ac || m.ac, m, st:{}, boss:!!spec.boss, xp:spec.xp || m.xp, escapeAt:spec.escapeAt, escapeText:spec.escapeText};
   });
   if (cfg.noScale) foes.noScale = true;
   scaleFoes(foes, cfg);
@@ -162,7 +163,20 @@ function alive(c=G.combat){ return c.foes.filter(f => f.hp > 0 && !f.st.turned &
 function advancePhase(){
   const c = G.combat;
   c.phaseIdx++;
-  if (c.phaseIdx > 1){ c.phaseIdx = 0; c.round++; log('round', `Round ${c.round}`); }
+  if (c.phaseIdx > 1){ c.phaseIdx = 0; c.round++; log('round', `Round ${c.round}`); betrayCheck(c); }
+}
+/* a companion who turns on you mid-fight: cfg.betray = {ally, round, spec, text} */
+function betrayCheck(c){
+  const b = c.cfg.betray;
+  if (!b || c.betrayed || c.round < b.round || !G.ally || G.ally.key !== b.ally) return;
+  c.betrayed = true;
+  const m = MONSTERS[b.spec.key], hp = Math.max(1, G.ally.hp);
+  const f = {uid:c.foes.length, key:b.spec.key, base:b.spec.name, name:b.spec.name, hp, max:Math.max(hp, b.spec.hp || m.hp), ac:b.spec.ac || m.ac, m, st:{}, boss:true, xp:b.spec.xp || m.xp};
+  G.ally = null;
+  if (G.bench) delete G.bench[b.ally];
+  c.foes.push(f); c.initial++;
+  log('bad', b.text || `<b>${esc(f.name)} turns on you!</b>`);
+  if (b.fn) b.fn(G);
 }
 function runCombat(){
   let guard = 0;
@@ -170,7 +184,7 @@ function runCombat(){
     const c = G.combat, who = c.order[c.phaseIdx];
     if (who === 'player'){
       if (c.round === 1 && c.playerSkip){ advancePhase(); continue; }
-      c.dodge = false; c.bonusUsed = false; c.sneakUsed = false; c.extra = false; c.surged = false;
+      c.dodge = false; c.bonusUsed = false; c.sneakUsed = false; c.extra = false; c.surged = false; c.attacks = 0;
       if (c.prone){ c.prone = false; log('sys', 'You get back on your feet.'); }
       if (c.shieldUp) log('sys', 'Your Shield fades.');
       c.reacted = false; c.shieldUp = false; c.movedCover = false; c.mm = null;
@@ -326,7 +340,7 @@ function enemyStrike(f, a, st){
     if (allyUp()) atAlly = true;
     else { log('sys', `${esc(f.name)} has no line of sight to you and holds its ${a.name}.`); return st.martialUsed; }
   }
-  let tAC = atAlly ? ALLIES[G.ally.key].ac : ac() + coverAC(c.pcover) + (c.shieldUp ? 5 : 0);
+  let tAC = atAlly ? ALLIES[G.ally.key].ac : ac() + (rangedStrike(a) ? coverAC(c.pcover) : 0) + (c.shieldUp ? 5 : 0);
   let adv = false, dis = false;
   if (f.m.special.includes('pack') && (allies || allyUp())) adv = adv || allies;
   if (f.st.hidden){ adv = true; f.st.hidden = false; }
@@ -407,6 +421,10 @@ function damageFoe(f, n, type, src, how={}){
   f.hp -= n;
   log('good', `${src}: <b>${n}</b> ${type} damage to ${esc(f.name)}.${note}`);
   if (f.st.asleep && n > 0 && f.hp > 0){ f.st.asleep = false; log('sys', `${esc(f.name)} wakes up!`); }
+  if (f.escapeAt && f.hp > 0 && f.hp <= f.max * f.escapeAt && !f.st.fled){
+    f.st.fled = true; if (G.combat) G.combat.fled = true;
+    log('bad', f.escapeText || `<b>${esc(f.name)} escapes!</b>`);
+  }
   if (f.hp <= 0 && n > 0 && f.m.special.includes('fortitude') && type !== 'radiant' && !how.crit){
     const sv = d(20) + (f.m.save.con || 0), dc = 5 + n;
     if (sv >= dc){ f.hp = 1; log('sys', `${esc(f.name)} should have fallen, but it lurches upright with 1 hit point (Undead Fortitude: ${sv} vs DC ${dc}).`); return; }
@@ -454,8 +472,8 @@ function allyStrike(a, f){
   const adv = !!f.st.asleep || !!f.st.prone || !!f.st.marked || !!f.st.reckless;
   const r = monsterD20(adv, false);
   const total = r.nat + a.attack.toHit, crit = r.nat === 20;
-  let hit = crit || (r.nat !== 1 && total >= foeAC(f));
-  log('roll', `${esc(G.ally.name)} ${a.attack.name} at ${esc(f.name)}: ${diceHTML(r)} ${sgn(a.attack.toHit)} = <b>${total}</b> vs AC ${foeAC(f)} <em class="${hit ? 'ok' : 'no'}">${crit ? 'Critical hit!' : hit ? 'Hit' : 'Miss'}</em>`);
+  let hit = crit || (r.nat !== 1 && total >= foeAC(f, !ranged));
+  log('roll', `${esc(G.ally.name)} ${a.attack.name} at ${esc(f.name)}: ${diceHTML(r)} ${sgn(a.attack.toHit)} = <b>${total}</b> vs AC ${foeAC(f, !ranged)} <em class="${hit ? 'ok' : 'no'}">${crit ? 'Critical hit!' : hit ? 'Hit' : 'Miss'}</em>`);
   f.st.marked = false;
   if (hit && parries(f, total, crit, !/bow|sling/i.test(a.attack.name))) hit = false;
   if (!hit) return;
@@ -530,11 +548,11 @@ function playerAttack(i){
   const bonus = atkBonus(w);
   const r = d20test({mod:bonus, adv, dis});
   const nat20 = r.nat >= (hasFeat('improvedCritical') ? 19 : 20);
-  let hit = nat20 || (r.nat !== 1 && r.total >= foeAC(f));
+  let hit = nat20 || (r.nat !== 1 && r.total >= foeAC(f, w.melee));
   const crit = nat20 || (hit && f.st.asleep && w.melee);
-  log('roll', `${w.name} at ${esc(f.name)}: ${diceHTML(r)} ${sgn(bonus)} = <b>${r.total}</b> vs AC ${foeAC(f)}${f.st.cover ? ` (${COVER_NAME[f.st.cover]})` : ''} <em class="${hit ? 'ok' : 'no'}">${crit ? 'Critical hit!' : hit ? 'Hit' : 'Miss'}</em>${r.note}`);
+  log('roll', `${w.name} at ${esc(f.name)}: ${diceHTML(r)} ${sgn(bonus)} = <b>${r.total}</b> vs AC ${foeAC(f, w.melee)}${f.st.cover && !w.melee ? ` (${COVER_NAME[f.st.cover]})` : ''} <em class="${hit ? 'ok' : 'no'}">${crit ? 'Critical hit!' : hit ? 'Hit' : 'Miss'}</em>${r.note}`);
   c.hidden = false; f.st.marked = false; f.st.hidden = false;
-  if (hit && !nat20 && foeShield(f, r.total)) hit = false;
+  if (hit && !nat20 && foeShield(f, r.total, w.melee)) hit = false;
   if (hit && parries(f, r.total, crit, w.melee)) hit = false;
   if (hit){
     const dr = rollDice(w.dmg, crit);
@@ -544,7 +562,17 @@ function playerAttack(i){
     }
     damageFoe(f, Math.max(1, n), w.type, txt, {melee:w.melee, magic:w.magic, crit});
   }
+  /* Extra Attack: a second attack before the action ends */
+  c.attacks = (c.attacks || 0) + 1;
+  if (hasFeat('extraAttack') && c.attacks < 2 && alive().length){ log('sys', 'Extra Attack: you can attack once more.'); render(); return; }
+  c.attacks = 0;
   endAction();
+}
+/* cantrips grow at 5th, 11th and 17th level */
+function cantripDice(sp){
+  if (sp.level !== 0) return sp.dmg;
+  const lv = G._scroll ? 1 : G.char.level, k = 1 + (lv >= 5) + (lv >= 11) + (lv >= 17);
+  return k === 1 ? sp.dmg : String(sp.dmg).replace(/^(\d*)d/, (m0, n0) => (parseInt(n0 || '1', 10) * k) + 'd');
 }
 function castSpell(id, onAlly, scroll, alloc){
   const c = G.combat, sp = SPELLS[id];
@@ -579,7 +607,7 @@ function castSpell(id, onAlly, scroll, alloc){
     c.hidden = false; f.st.marked = false; f.st.hidden = false;
     if (hit && !crit && foeShield(f, r.total)) hit = false;
     if (hit){
-      const dr = rollDice(sp.dmg, crit);
+      const dr = rollDice(cantripDice(sp), crit);
       damageFoe(f, dr.total, sp.type, `${sp.name} ${dr.text}`, {magic:true});
       if (sp.mark && f.hp > 0){ f.st.marked = true; log('sys', `${esc(f.name)} glows with light. Your next attack on it has advantage.`); }
     }
@@ -587,7 +615,7 @@ function castSpell(id, onAlly, scroll, alloc){
     const sv = foeSave(f, sp.save, true);
     const ok = sv.total >= spellDC();
     log('roll', `${esc(f.name)} ${ABIL_NAME[sp.save]} save: ${sv.text} vs DC ${spellDC()} <em class="${ok ? 'no' : 'ok'}">${ok ? 'Saved' : 'Failed'}</em>`);
-    if (!ok){ const dr = rollDice(sp.dmg); damageFoe(f, dr.total, sp.type, `${sp.name} ${dr.text}`, {magic:true}); }
+    if (!ok){ const dr = rollDice(cantripDice(sp)); damageFoe(f, dr.total, sp.type, `${sp.name} ${dr.text}`, {magic:true}); }
   } else if (sp.kind === 'missile'){
     /* Magic Missile: every dart hits automatically. One damage roll is shared by all
        the darts, and they strike at the same moment. Cover short of full cover
@@ -618,7 +646,7 @@ function castSpell(id, onAlly, scroll, alloc){
     }
     if (left === pool.total) log('sys', 'Nothing falls asleep.');
   } else if (sp.kind === 'aoe'){
-    const dr = rollDice(sp.dmg);
+    const dr = rollDice(cantripDice(sp));
     log('roll', `${sp.name}: ${dr.text} = <b>${dr.total}</b>`);
     alive().forEach(x => {
       if (x.st.cover === 'full'){ log('sys', `${esc(x.name)} is safe behind full cover.`); return; }

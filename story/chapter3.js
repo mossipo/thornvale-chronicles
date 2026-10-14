@@ -309,8 +309,7 @@ Object.assign(STORY, {
     options:[
       {label:'Find Nell at the rope walk', if:G => !!G.flags.c3_nell, once:'c3_nell_visit', give:{insp:true, xp:50},
        text:`Nell Crane is twelve, sharp-eyed, and covered in hemp dust. When you tell her what her grandfather said, she is quiet for a long time. Then she says, "Tell him I'll write." You leave lighter than you came.`},
-      {label:'Chapter Four: The Greywater Ferry', tag:'Coming soon',
-       text:`This chapter has not been written yet. Builders: add story/chapter4.js and point this option at its first scene.`},
+      {label:'Chapter Four: The Greywater Ferry', tag:'Suggested level 4', go:'c4_start'},
       {label:'Ride back up to Bramblewick', go:'bramblewick'}
     ]
   }

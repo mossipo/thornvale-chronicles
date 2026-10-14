@@ -85,6 +85,8 @@ function migrateChar(ch){
   }
   if (!ch.story) ch.story = {text:'', trait:'', ideal:'', bond:'', flaw:''};
   if (typeof registerCustomSpells === 'function') registerCustomSpells(ch);
+  const cs = CLASSES[ch.cls].slots;
+  if (cs && ch.slots){ const want = cs[Math.min(ch.level, 10)] || ch.slots.max; if (want > ch.slots.max){ ch.slots.left += want - ch.slots.max; ch.slots.max = want; } }
   return ch;
 }
 /* G._scroll is set while a spell scroll is read: scrolls use DC 13 and +5 */
@@ -121,7 +123,7 @@ function buildChar(C){
   const perLevel = Math.floor(c.hd / 2) + 1 + mod(abil.con) + (race.hpPerLevel || 0);
   const calcHp = Math.max(1, c.hd + mod(abil.con) + (race.hpPerLevel || 0) + (level - 1) * Math.max(1, perLevel));
   const maxHp = imp.hp > 0 ? imp.hp : calcHp;
-  const slotLevel = Math.min(level, 3);
+  const slotLevel = Math.min(level, 10);
   const ch = {
     name:(C.name || 'Nameless').trim().slice(0, 32), race:C.race, raceName:C.race === 'other' ? (C.raceName || 'Adventurer') : null, cls:C.cls, bg:C.bg,
     level, xp: imp.xp >= 0 && imp.xp !== undefined && imp.xp !== null ? imp.xp : (level > 1 ? (XP_NEXT[level - 1] || 0) : 0),
@@ -427,6 +429,8 @@ function optionVisible(o){
 function goTo(id, quiet){
   const sc = STORY[id];
   if (!sc){ log('sys', `Missing scene: ${esc(id)}`); render(); return; }
+  /* intercept: a scene can send you somewhere else first (a patrol, an ambush, an event) */
+  if (sc.intercept){ const to = sc.intercept(G, id); if (to && to !== id && STORY[to]){ goTo(to, quiet); return; } }
   G.shop = null; G.forge = false;
   if (sc.reader){ showSection(G.module ? G.module.idx || 0 : 0); return; }
   G.scene = id; G.choices = null; G.mode = 'explore';

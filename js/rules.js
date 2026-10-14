@@ -56,7 +56,7 @@ const CLASSES = {
     prof:{armor:['light','medium','heavy','shield'], weapons:['simple','martial']},
     gear:{a_chainmail:1, shield:1, w_longsword:1, w_handaxe:1},
     equip:{armor:'a_chainmail', shield:true, weapons:['w_longsword','w_handaxe']},
-    slots:null, features:{1:['secondWind','dueling'], 2:['actionSurge'], 3:['improvedCritical']},
+    slots:null, features:{1:['secondWind','dueling'], 2:['actionSurge'], 3:['improvedCritical'], 5:['extraAttack']},
     items:{rope:1, torch:3},
     desc:'A trained warrior in heavy armor. Hits hard, takes hits, catches a second wind.'
   },
@@ -77,7 +77,7 @@ const CLASSES = {
     gear:{a_chainmail:1, shield:1, w_mace:1},
     equip:{armor:'a_chainmail', shield:true, weapons:['w_mace']},
     cast:'wis', cantrips:['sacredFlame'], spells:['cureWounds','guidingBolt'],
-    slots:{1:2, 2:3, 3:4}, features:{1:['discipleOfLife'], 2:['turnUndead']},
+    slots:{1:2, 2:3, 3:4, 4:5, 5:6, 6:7, 7:8, 8:9, 9:10, 10:11}, features:{1:['discipleOfLife'], 2:['turnUndead'], 5:['potentCantrips']},
     items:{symbol:1},
     desc:'A servant of the light, armored and devout. Heals, smites with radiant fire.'
   },
@@ -88,7 +88,7 @@ const CLASSES = {
     gear:{w_dagger:1, w_quarterstaff:1},
     equip:{armor:null, shield:false, weapons:['w_dagger','w_quarterstaff']},
     cast:'int', cantrips:['fireBolt'], spells:['magicMissile','sleep','burningHands','shield'],
-    slots:{1:2, 2:3, 3:4}, features:{1:['arcaneRecovery','mageArmor'], 2:[]},
+    slots:{1:2, 2:3, 3:4, 4:5, 5:6, 6:7, 7:8, 8:9, 9:10, 10:11}, features:{1:['arcaneRecovery','mageArmor'], 2:[], 5:['potentCantrips']},
     items:{spellbook:1},
     desc:'A scholar of the arcane. Fragile, but Sleep and Magic Missile end fights fast.'
   }
@@ -107,6 +107,8 @@ const FEATURES = {
   improvedCritical:{name:'Improved Critical', desc:'Your weapon attacks score a critical hit on a roll of 19 or 20.'},
   fastHands:    {name:'Fast Hands', desc:'Use an item, such as a potion, as a bonus action.'},
   mageArmor:    {name:'Mage Armor', desc:'House rule: you keep Mage Armor up between adventures. With no armor on, your AC is 13 + your Dexterity modifier.'},
+  extraAttack:  {name:'Extra Attack', desc:'You attack twice, instead of once, when you take the Attack action on your turn.'},
+  potentCantrips:{name:'Stronger Cantrips', desc:'At 5th level your cantrips deal an extra damage die (two dice instead of one), as cantrips do in the core rules.'},
   arcaneRecovery:{name:'Arcane Recovery', uses:1, rest:'long', desc:'Once a day, during a short rest, recover one expended spell slot.'}
 };
 

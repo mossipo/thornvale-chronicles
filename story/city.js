@@ -36,7 +36,9 @@ function gainRep(n){
     }
   });
 }
+const CHAPTER_LABEL_FN = {};
 function chapterLabel(sc){
+  if (CHAPTER_LABEL_FN[sc.chapter]) return CHAPTER_LABEL_FN[sc.chapter](sc);
   if (sc.city) return `Aldermere · City of Bridges · Standing: ${repName()}`;
   if (sc.job && typeof JOBS !== 'undefined' && JOBS[sc.job]) return `Job · ${JOBS[sc.job].title} · Scaled to your level`;
   return '';

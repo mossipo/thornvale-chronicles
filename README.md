@@ -18,10 +18,28 @@ Every time you change a file on GitHub, the website updates by itself within a m
 
 ## What is in the game
 
-* **Three chapters of story, all original:**
+* **Five chapters of story, all original:**
   * Chapter One: *The Marsh Road* (suggested level 1)
   * Chapter Two: *The Sunken Shrine* (level 2)
   * Chapter Three: *The Saltreach Gaol* (level 3), a heist in a tidal-island prison with three cover identities, a suspicion meter, and an inside man to expose
+  * Chapter Four: *The Greywater Ferry* (level 4). Five days until the new moon, and three leads you won't have time to chase them all:
+    * a haunted house whose ghost wants her stolen staff back
+    * Greywater's rogues banding together as the Gallery
+    * a jester who poisons a noble every five days
+
+    You choose who to talk to, who to trust, and where to be on the night. The watch arrests you if you break the law. Traps can knock you out, leaving you to escape a smuggler's hold with your wits and sometimes an unexpected friend.
+  * Chapter Five: *Where the River Ends* (level 5), the finale:
+    * a lord's contract against a rogue warrior who turns out to be a paladin of freedom
+    * an ogre holding a town hostage, who may not be as simple, or as sorry, as he looks
+    * a lighthouse lamp to secure before the villain does
+    * the Drowned Door itself
+
+    Vane can be talked down, beaten by resealing the door, or fought. How strong he is depends on everything you did in Chapter Four.
+* **Consequences.** Who you spared, who you robbed, which leads you followed, and whose trust you earned all carry forward:
+  * Lady Fell's writ opens roads.
+  * The Gallery you turned helps at the ferry.
+  * A ghost you treated kindly comes when you are trapped in the dark.
+  * The companions you made, among them Captain Doyle, Silas Crane, Wick, and Ser Elias, can travel with you into later chapters. Call them back from any hiring board.
 * **Aldermere, the City of Bridges,** a city hub you can reach from Greywater, Bramblewick, or Captain Doyle's, or choose as your starting point. It has:
   * **Shops** on Market Row: provisions, a smithy, and an apothecary
   * **An inn**, the Lantern and Lark, where you can rest, hear rumors, gamble, and hire help
@@ -107,6 +125,8 @@ story/chapter3.js          Chapter Three: The Saltreach Gaol
 story/npcs.js              hiring board, the cast of named characters, roadside people, captives
 story/city.js              Aldermere: city scenes, standing (reputation), rumors, the arena
 story/jobs.js              the job board, job rules (scaling, quitting, rescue), and all 11 jobs
+story/chapter4.js          Chapter Four: The Greywater Ferry
+story/chapter5.js          Chapter Five: Where the River Ends
 js/forge.js                the Spell Forge and spell scrolls
 js/engine.js               dice, checks, rewards, hazards, outcomes, rests, saving
 js/combat.js               turns, attacks, spells, combat actions
@@ -139,10 +159,10 @@ Object.assign(STORY, {
 });
 ```
 
-To start Chapter Four:
-1. Make `story/chapter4.js` and add its `<script>` line to `index.html` after chapter3.
+To add Chapter Six:
+1. Make `story/chapter6.js` and add its `<script>` line to `index.html` after chapter5.
 2. Add the name to `CHAPTERS` and its suggested level to `CHAPTER_LEVEL` in `story/story.js`, and its first scene to `CHAPTER_START` in `js/library.js`.
-3. Point the "Chapter Four" option in `c3_end` (in `story/chapter3.js`) at your first scene.
+3. Add an option in `c5_end` (in `story/chapter5.js`) that goes to your first scene.
 
 `story/chapter3.js` is a good model for a quest with its own rules: it adds its own encounter table, journal entries, lore, an item, and a suspicion meter, all inside the one file.
 
@@ -165,6 +185,15 @@ Choices, encounter results, and check results all use the same small set of keys
 | `fn` | any custom code |
 
 Options also take `label`, `if` (a condition), and `once`. Encounter table entries take `if` and `once` too. `choices` can be a function of `G` that builds the menu when it opens.
+
+### Tools for deeper scenes
+
+* `intercept: (G, id) => sceneId` on a scene sends the hero somewhere else first. The watch patrol in Chapter Four uses it.
+* `crime(place, n, why)` raises how wanted you are in a place, and `heat(G, place)` reads it.
+* `knockOut(scene, text)` is an outcome: the hero is knocked out, loses their weapons, and wakes in another scene.
+* In a fight, a foe spec can take `escapeAt: 0.5` and `escapeText`: the foe escapes at half hit points.
+* A fight can take `betray: {ally, round, spec, text}`: your companion turns on you at the start of that round.
+* `withAlly('silas')` is a condition for options that only appear when a certain companion is with you.
 
 ### Writing a new job
 
@@ -193,14 +222,19 @@ Add `noScale:true` to a fight to skip level scaling. The template keys are `comm
 * **Mage Armor:** wizards keep it up between adventures (AC 13 + Dexterity with no armor).
 * **Spell slots** are all treated as 1st level.
 * **Companions** recover fully on a short rest and get back up after a fight you win. Their healing spells come back on a long rest.
-* **Levels** go up to 20 with the SRD XP table, but class features stop at level 3, so high-tier jobs are tuned a little lighter than the books would make them.
+* **Levels** go up to 20 with the SRD XP table:
+  * Fighters gain Extra Attack at 5th level.
+  * Cantrips gain a second damage die at 5th level.
+  * Clerics and wizards keep gaining spell slots, all treated as 1st level.
+
+  Other class features stop at level 3, so high-tier jobs are tuned a little lighter than the books would make them.
 * **Cover.** Every fight has terrain:
   * **Open ground:** no cover for anyone. The arena is always open ground.
   * **Some cover:** half cover, +2 AC and Dexterity saves. This is the default outdoors and in town.
   * **Lots of cover:** three-quarters cover, +5 AC and Dexterity saves. This applies in dungeons, ruins, sewers, the gaol, and the docks.
   * **Full cover** is possible wherever there is any cover.
 
-  Moving into partial cover is free once a turn. Getting behind full cover uses your turn. Behind full cover, no attack, spell, or dart can target you and area spells miss you, but a melee foe can spend its attack coming around it. Attacking from full cover steps you out into partial cover. Thinking foes do the same: archers and casters take partial cover, and badly hurt foes may fall back behind full cover for a turn. A scene can set `cover: 'open'`, `'some'`, or `'lots'`, and so can a fight.
+  Partial cover protects against ranged attacks and spells; a foe who closes to melee gets around it. Moving into partial cover is free once a turn. Getting behind full cover uses your turn. Behind full cover, no attack, spell, or dart can target you and area spells miss you, but a melee foe can spend its attack coming around it. Attacking from full cover steps you out into partial cover. Thinking foes do the same: archers and casters take partial cover, and badly hurt foes may fall back behind full cover for a turn. A scene can set `cover: 'open'`, `'some'`, or `'lots'`, and so can a fight.
 * **Magic Missile.**
   * **Aiming:** you aim three darts by splitting them among your foes however you like.
   * **Damage:** one damage roll of 1d4 + 1 applies to every dart. All the darts strike at once and never miss.

@@ -82,7 +82,7 @@ function renderChoices(){
     list.push(btn('Load your last save', null, () => { const s = readSave(); if (!loadState(s)) notice('No save found.'); }));
     list.push(btn('Create a new hero', null, newHero));
   } else if (G.choices){
-    G.choices.filter(optionVisible).forEach(o => list.push(btn(resolveText(o.label), o.tag || (o.check ? tagFor(o.check) : null), () => chooseOption(o))));
+    G.choices.filter(optionVisible).forEach(o => list.push(btn(resolveText(o.label), resolveText(o.tag) || (o.check ? tagFor(o.check) : null), () => chooseOption(o))));
   } else {
     const sc = STORY[G.scene];
     if (sc.reader && READER && G.module){
@@ -91,7 +91,7 @@ function renderChoices(){
       if (i > 0) list.push(btn(`Go back: ${secs[i - 1].title}`, null, () => { log('you', 'Go back'); showSection(i - 1); }));
       list.push(btn('Read this section again', null, () => showSection(i)));
     }
-    sc.options.filter(optionVisible).forEach(o => list.push(btn(resolveText(o.label), o.tag || (o.check ? tagFor(o.check) : null), () => chooseOption(o))));
+    sc.options.filter(optionVisible).forEach(o => list.push(btn(resolveText(o.label), resolveText(o.tag) || (o.check ? tagFor(o.check) : null), () => chooseOption(o))));
     const gen = [];
     if (G.captive && CAPTIVES[G.captive]) gen.push(btn(`Question your captive ${CAPTIVES[G.captive].name}`, 'Captive', () => {
       const id = G.captive; G.captive = null; log('you', `Question the captive ${esc(CAPTIVES[id].name)}`); resolve(CAPTIVES[id].talk);
@@ -140,6 +140,7 @@ function renderCombat(){
   if (c.extra) chips.push(`<span class="chip on">Action Surge</span>`);
   chips.push(`<span class="chip${c.bonusUsed ? '' : ' on'}">Bonus action ${c.bonusUsed ? 'used' : 'ready'}</span>`);
   if (ch.insp) chips.push(`<span class="chip on">Inspired</span>`);
+  if (hasFeat('extraAttack')) chips.push(`<span class="chip${c.attacks ? ' on' : ''}">Attacks ${c.attacks || 0} of 2</span>`);
   chips.push(`<span class="chip">${c.terrain === 'open' ? 'Open ground' : c.terrain === 'lots' ? 'Lots of cover' : 'Some cover'}</span>`);
   if (c.pcover) chips.push(`<span class="chip on">You: ${COVER_NAME[c.pcover]}${coverAC(c.pcover) ? ' +' + coverAC(c.pcover) + ' AC' : ''}</span>`);
   if (c.shieldUp) chips.push(`<span class="chip on">Shield +5 AC</span>`);
@@ -209,7 +210,7 @@ function renderCombat(){
   if (hasFeat('actionSurge')) other.push({label:'Action Surge', sub:`Free · act twice · ${ch.uses.actionSurge || 0} left`, fn:actionSurge, cls:'bonus', off:!ch.uses.actionSurge || c.surged});
   if (hasFeat('turnUndead')) other.push({label:'Turn Undead', sub:`Undead flee on a failed save · ${ch.uses.turnUndead || 0} left`, fn:turnUndead, off:!ch.uses.turnUndead || !alive().some(f => f.m.type === 'undead')});
   const part = partialCover(c);
-  if (part && !c.pcover && !c.movedCover) other.push({label:`Move into ${COVER_NAME[part]}`, sub:`Free · +${coverAC(part)} AC and Dexterity saves`, fn:() => takeCover(false)});
+  if (part && !c.pcover && !c.movedCover) other.push({label:`Move into ${COVER_NAME[part]}`, sub:`Free · +${coverAC(part)} AC against ranged attacks and spells, and on Dexterity saves`, fn:() => takeCover(false)});
   if (part && c.pcover !== 'full') other.push({label:'Get behind full cover', sub:'Uses your turn · nothing can target you; melee foes may come around', fn:() => takeCover(true)});
   const cunning = hasFeat('cunningAction');
   other.push({label:'Hide', sub:(cunning ? 'Bonus · ' : '') + 'Stealth vs their Perception; next attack has advantage', fn:hideAction, cls:cunning ? 'bonus' : '', off:cunning && c.bonusUsed});
@@ -583,7 +584,16 @@ function begin(){
   }
   if (ch >= 3){
     Object.assign(G.flags, {stone_returned:true, wren_free:true, wren_reported:true, chapter_done:true, got_stone:true});
-    addItem('letter');
+    if (ch === 3) addItem('letter');
+  }
+  if (ch >= 4){
+    G.char.gold += 100;
+    Object.assign(G.flags, {c3_briefed:true, c3_inside:true, c3_silas_talked:true, c3_holt_done:true, c3_proof:true, c3_suspect_holt:true, c3_done:true, cult_lore:true});
+  }
+  if (ch >= 5){
+    G.char.gold += 120;
+    Object.assign(G.flags, {c4_done:true, c4_day:5, c4_gallery:'turned', c4_wick:'friend', c4_jester:'caught', c4_aldreth:'promised', c4_vane_met:true});
+    addItem('dawnstaff'); addItem('aldreth_ring');
   }
   log('sys', `Chapter ${CH_WORD[ch]}: ${CHAPTERS[ch]}. ${esc(G.char.name)}, level ${G.char.level} ${esc(G.char.raceName || RACES[G.char.race].name)} ${CLASSES[G.char.cls].name}, begins the story here.`);
   goTo(CHAPTER_START[ch]);

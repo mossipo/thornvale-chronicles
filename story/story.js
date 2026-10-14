@@ -6,11 +6,13 @@
 'use strict';
 
 const STORY = {};
-const CHAPTERS = {1:'The Marsh Road', 2:'The Sunken Shrine', 3:'The Saltreach Gaol', 4:'The Greywater Ferry'};
+const CHAPTERS = {1:'The Marsh Road', 2:'The Sunken Shrine', 3:'The Saltreach Gaol', 4:'The Greywater Ferry', 5:'Where the River Ends'};
 /* Suggested hero level for each chapter. Fights scale up or down from here. */
-const CHAPTER_LEVEL = {1:1, 2:2, 3:3, 4:4};
+const CHAPTER_LEVEL = {1:1, 2:2, 3:3, 4:4, 5:5};
 const CH_WORD = ['', 'One', 'Two', 'Three', 'Four', 'Five'];
 
+/* how much cover each area offers in a fight: open, some, or lots (see combat.js) */
+const AREA_COVER = {};
 const AREA_NAME = {town:'Settlement', wilds:'Wilderness', marsh:'Marsh', tower:'Hollowmere Tower', dungeon:'Shrine Halls', crypt:'Crypt', boss:'Lair'};
 
 /* Quest journal: entries appear when shown() is true and are checked when done() is true */
