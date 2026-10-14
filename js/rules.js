@@ -87,7 +87,7 @@ const CLASSES = {
     prof:{armor:[], weapons:['dagger','dart','sling','quarterstaff','lcrossbow']},
     gear:{w_dagger:1, w_quarterstaff:1},
     equip:{armor:null, shield:false, weapons:['w_dagger','w_quarterstaff']},
-    cast:'int', cantrips:['fireBolt'], spells:['magicMissile','sleep','burningHands'],
+    cast:'int', cantrips:['fireBolt'], spells:['magicMissile','sleep','burningHands','shield'],
     slots:{1:2, 2:3, 3:4}, features:{1:['arcaneRecovery','mageArmor'], 2:[]},
     items:{spellbook:1},
     desc:'A scholar of the arcane. Fragile, but Sleep and Magic Missile end fights fast.'
@@ -115,7 +115,8 @@ const SPELLS = {
   sacredFlame: {name:'Sacred Flame', level:0, kind:'save', save:'dex', dmg:'1d8', type:'radiant', desc:'Target makes a Dexterity save or takes 1d8 radiant damage.'},
   guidingBolt: {name:'Guiding Bolt', level:1, kind:'attack', dmg:'4d6', type:'radiant', mark:true, desc:'Ranged spell attack. 4d6 radiant, and your next attack on the target has advantage.'},
   cureWounds:  {name:'Cure Wounds', level:1, kind:'heal', heal:'1d8', desc:'Touch: regain 1d8 + your Wisdom modifier hit points.'},
-  magicMissile:{name:'Magic Missile', level:1, kind:'missile', darts:3, dmg:'1d4+1', type:'force', desc:'Three darts that never miss, 1d4 + 1 force each.'},
+  magicMissile:{name:'Magic Missile', level:1, kind:'missile', darts:3, dmg:'1d4+1', type:'force', desc:'Three glowing darts of force. Aim them at one foe or split them among several. Each dart hits automatically for 1d4 + 1 force (one roll for all the darts). Cover does not stop them, but full cover, a Shield spell, a deflecting charm, or immunity to spells does.'},
+  shield:      {name:'Shield', level:1, kind:'reaction', desc:'Reaction: when an attack would hit you, or magic missile targets you, +5 AC until the start of your next turn and the darts do nothing. The game casts it for you when it would turn a hit into a miss (switch this off in a fight).'},
   sleep:       {name:'Sleep', level:1, kind:'sleep', pool:'5d8', desc:'Roll 5d8. Creatures fall asleep, weakest first, until the total runs out. Undead are immune.'},
   burningHands:{name:'Burning Hands', level:1, kind:'aoe', save:'dex', dmg:'3d6', type:'fire', desc:'Every foe makes a Dexterity save. 3d6 fire, half on a success.'}
 };
@@ -221,6 +222,7 @@ Object.assign(ITEMS, {
   ring_prot: {name:'Ring of Protection', magic:true, ac:1, save:1, cost:350, desc:'A plain silver band that hums faintly. +1 to your AC and to every saving throw.'},
   cloak_prot:{name:'Cloak of Protection', magic:true, ac:1, save:1, cost:400, desc:'Grey wool that turns aside blows. +1 to your AC and to every saving throw.'},
   starglass: {name:'Starglass Lens', magic:true, spell:1, cost:250, desc:'A monocle of smoky crystal from the old observatory. +1 to your spell attacks and spell save DC.'},
+  brooch:    {name:'Brooch of Shielding', magic:true, cost:450, desc:'A silver brooch shaped like a small shield. You take half damage from force, and magic missile darts do nothing to you.'},
   wardstone: {name:'Wardstone of Aldermere', magic:true, save:1, cost:200, desc:'A river pebble carved with the city seal and blessed by the Collegium. +1 to every saving throw.'},
   citykey:   {name:'Key to the City', quest:true, desc:'A heavy brass key on a blue ribbon. The Hero\'s House on Lantern Square is yours.'}
 });
@@ -247,7 +249,7 @@ Object.assign(SHOPS, {
   quietblade:{city:true, name:'The Quiet Blade', blurb:'A narrow shop with no sign. The swordsmith speaks in a whisper and her blades sing.',
         stock:WEAPON_LIST.map(w => 'm_' + w[0])},
   gilded:{city:true, name:'The Gilded Lantern', blurb:'A curio shop for people with titles. Every item sits on velvet under glass.',
-        stock:['ring_prot','cloak_prot','potion_greater','wardstone']},
+        stock:['ring_prot','cloak_prot','brooch','potion_greater','wardstone']},
   royalarmory:{city:true, name:'The Royal Armory', blurb:'The city\'s own armorers, who only sell to those Aldermere trusts with its life.',
         stock:['a_plate', ...ARMOR_LIST.map(a => 'ma_' + a[0])]}
 });

@@ -170,9 +170,11 @@ Object.assign(MONSTERS, {
     save:{str:-1,dex:2,con:0,int:6,wis:4,cha:0},
     actions:[
       {w:3, strikes:[_S('Fire Bolt', 6, '2d10', 'fire', {spell:true})]},
+      {w:1, strikes:[{name:'Magic Missile', missile:3, dmg:'1d4+1', type:'force', uses:2}]},
       {w:1, strikes:[_V('Fireball', 'dex', 14, '8d6', 'fire', true, {uses:3})]},
       {w:1, strikes:[_S('Dagger', 5, '1d4+2', 'piercing')]}],
-    desc:`A trained wizard who has spent years over books and failed experiments. Mage Armor is already up. Spells: Fire Bolt and Fireball.`},
+    shieldUses:2,
+    desc:`A trained wizard who has spent years over books and failed experiments. Mage Armor is already up. Spells: Fire Bolt, Magic Missile, Fireball, and Shield (as a reaction, twice a fight).`},
   assassin:{name:'Assassin', npc:true, cr:'8', ac:15, hp:78, xp:3900, pp:13, init:3, type:'humanoid', special:['assassinate','evasion'], sneak:'4d6', resist:['poison'],
     save:{str:0,dex:6,con:2,int:4,wis:0,cha:0},
     actions:[
@@ -185,6 +187,7 @@ Object.assign(MONSTERS, {
     actions:[
       {w:3, strikes:[_S('Fire Bolt', 9, '4d10', 'fire', {spell:true})]},
       {w:1, strikes:[_S('Shocking Grasp', 9, '4d8', 'lightning', {spell:true})]},
+      {w:1, strikes:[{name:'Magic Missile', missile:3, dmg:'1d4+1', type:'force', uses:4}]},
       {w:1, strikes:[_V('Lightning Bolt', 'dex', 17, '8d6', 'lightning', true, {uses:3})]},
       {w:1, strikes:[_V('Cone of Cold', 'con', 17, '8d8', 'cold', true, {uses:3})]}],
     desc:`One of the greatest spellcasters alive. Magic Resistance, and Stoneskin is already up (half damage from weapons). Spells: Fire Bolt, Shocking Grasp, Lightning Bolt, Cone of Cold.`}

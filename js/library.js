@@ -170,6 +170,9 @@ function parseStatBlock(txt){
   if (/Pack Tactics/i.test(t)) m.special.push('pack');
   if (/Nimble Escape/i.test(t)) m.special.push('nimble');
   if (/Martial Advantage/i.test(t)) m.special.push('martial');
+  if (/Magic Resistance/i.test(t)) m.special.push('magicres');
+  if (/Limited Magic Immunity|Magic Immunity|immune to (?:all )?spells/i.test(t)) m.special.push('spellimmune');
+  if (/Spellcasting[\s\S]*\bshield\b(?!\s+(?:of|bash|guardian))/i.test(t)) m.special.push('shield');
   const vul = g(/Vulnerabilities\s+([^\n]+)/i);
   if (vul) m.vuln = DMG_TYPES.filter(x => vul.toLowerCase().includes(x));
   const imm = g(/Damage Immunities\s+([^\n]+)/i) || g(/(?:^|\n)\s*Immunities\s+([^\n]+)/i);
@@ -913,8 +916,9 @@ function renderLibAdventures(body){
 }
 const blankMonster = () => ({name:'', type:'monstrosity', ac:12, hp:10, xp:50, pp:10, init:0, multi:1, save:{}, attacks:[], special:[], areas:[], vuln:[], immune:[]});
 /* ---------- people: SRD templates, companions, and the cast ---------- */
-const SPECIAL_NAME = {pack:'Pack Tactics', reckless:'Reckless', assassinate:'Assassinate', evasion:'Evasion', magicres:'Magic Resistance', brave:'Brave', nimble:'Cunning Action', martial:'Martial Advantage'};
+const SPECIAL_NAME = {pack:'Pack Tactics', reckless:'Reckless', assassinate:'Assassinate', evasion:'Evasion', magicres:'Magic Resistance', brave:'Brave', nimble:'Cunning Action', martial:'Martial Advantage', spellimmune:'Immune to spells', mmimmune:'Deflects magic missile', shield:'Casts Shield'};
 function strikeText(s){
+  if (s.missile) return `${esc(s.name)} (${s.missile} darts, ${s.dmg} ${s.type} each, never miss)`;
   if (s.save) return `${esc(s.name)} (DC ${s.dc} ${ABIL_NAME[s.save]} save, ${s.dmg} ${s.type}${s.half ? ', half on a save' : ''})`;
   let t = `${esc(s.name)} ${sgn(s.toHit)} (${s.dmg} ${s.type})`;
   if (s.rider) t += ` plus DC ${s.rider.dc} ${ABIL_NAME[s.rider.save]} save or ${s.rider.dmg} ${s.rider.type}`;
@@ -934,6 +938,7 @@ function actionsText(m){
 function traitsText(m){
   const t = (m.special || []).filter(k => SPECIAL_NAME[k]).map(k => SPECIAL_NAME[k]);
   if (m.parry) t.push(`Parry +${m.parry}`);
+  if (m.shieldUses) t.push(`Shield spell (reaction, ${m.shieldUses} a fight)`);
   if (m.sneak) t.push(`Sneak Attack ${m.sneak}`);
   if (m.resist) t.push(`Resists ${m.resist.join(', ')}`);
   if (m.resistMundane) t.push(`Resists ${m.resistMundane.join(', ')} from non-magical weapons`);
@@ -1010,7 +1015,7 @@ function renderLibBestiary(body){
         <span class="lbl2">Attacks</span>
         ${[0, 1, 2].map(i => `<div class="fgrid atk"><input id="bmA${i}n" placeholder="Name" value="${v(atk(i).name)}" aria-label="Attack ${i + 1} name"><input id="bmA${i}h" placeholder="+4" value="${atk(i).toHit !== undefined ? v(sgn(atk(i).toHit)) : ''}" aria-label="Attack ${i + 1} to hit"><input id="bmA${i}d" placeholder="1d6+2" value="${v(atk(i).dmg)}" aria-label="Attack ${i + 1} damage"><input id="bmA${i}t" placeholder="slashing" value="${v(atk(i).type)}" aria-label="Attack ${i + 1} damage type"></div>`).join('')}
         <span class="lbl2">Special traits</span>
-        <div class="row">${[['pack', 'Pack Tactics'], ['nimble', 'Nimble Escape'], ['martial', 'Martial Advantage']].map(([k, n]) => `<label class="ck"><input type="checkbox" id="bmSp_${k}" ${(m.special || []).includes(k) ? 'checked' : ''}> ${n}</label>`).join('')}</div>
+        <div class="row">${[['pack', 'Pack Tactics'], ['nimble', 'Nimble Escape'], ['martial', 'Martial Advantage'], ['magicres', 'Magic Resistance'], ['spellimmune', 'Immune to spells'], ['mmimmune', 'Deflects magic missile'], ['shield', 'Casts Shield']].map(([k, n]) => `<label class="ck"><input type="checkbox" id="bmSp_${k}" ${(m.special || []).includes(k) ? 'checked' : ''}> ${n}</label>`).join('')}</div>
         <div class="fgrid"><label class="fld">Vulnerable to<input id="bmVuln" value="${v((m.vuln || []).join(', '))}" placeholder="radiant"></label><label class="fld">Immune to<input id="bmImm" value="${v((m.immune || []).join(', '))}" placeholder="poison"></label></div>
         <span class="lbl2">Shows up in random encounters</span>
         <div class="row">${AREA_TAGS.map(a => `<label class="ck"><input type="checkbox" id="bmAr_${a}" ${(m.areas || []).includes(a) ? 'checked' : ''}> ${AREA_NAME[a]}</label>`).join('')}</div>
@@ -1051,7 +1056,7 @@ function renderLibBestiary(body){
       m2.attacks.push({name:n || 'Attack', toHit:parseInt(val(`bmA${i}h`), 10) || 0, dmg, type:(val(`bmA${i}t`) || 'bludgeoning').toLowerCase()});
     }
     if (!m2.attacks.length){ notice('Add at least one attack.'); return; }
-    ['pack', 'nimble', 'martial'].forEach(k => { if ($('bmSp_' + k).checked) m2.special.push(k); });
+    ['pack', 'nimble', 'martial', 'magicres', 'spellimmune', 'mmimmune', 'shield'].forEach(k => { if ($('bmSp_' + k).checked) m2.special.push(k); });
     AREA_TAGS.forEach(a => { if ($('bmAr_' + a).checked) m2.areas.push(a); });
     m2.vuln = DMG_TYPES.filter(x => val('bmVuln').toLowerCase().includes(x));
     m2.immune = DMG_TYPES.filter(x => val('bmImm').toLowerCase().includes(x));

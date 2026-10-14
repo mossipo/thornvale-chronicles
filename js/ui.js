@@ -140,6 +140,10 @@ function renderCombat(){
   if (c.extra) chips.push(`<span class="chip on">Action Surge</span>`);
   chips.push(`<span class="chip${c.bonusUsed ? '' : ' on'}">Bonus action ${c.bonusUsed ? 'used' : 'ready'}</span>`);
   if (ch.insp) chips.push(`<span class="chip on">Inspired</span>`);
+  chips.push(`<span class="chip">${c.terrain === 'open' ? 'Open ground' : c.terrain === 'lots' ? 'Lots of cover' : 'Some cover'}</span>`);
+  if (c.pcover) chips.push(`<span class="chip on">You: ${COVER_NAME[c.pcover]}${coverAC(c.pcover) ? ' +' + coverAC(c.pcover) + ' AC' : ''}</span>`);
+  if (c.shieldUp) chips.push(`<span class="chip on">Shield +5 AC</span>`);
+  if (knownSpells().spells.includes('shield')) chips.push(`<button type="button" class="mini subdue" id="shieldBtn" aria-pressed="${c.autoShield !== false}">Shield reaction: ${c.autoShield !== false ? 'auto' : 'off'}</button>`);
   if (alive().some(f => f.m.type === 'humanoid')) chips.push(`<button type="button" class="mini subdue" id="subdueBtn" aria-pressed="${c.subdue}">Strike to subdue: ${c.subdue ? 'on' : 'off'}</button>`);
   let html = `<div class="turnbar">${chips.join('')}</div><div class="foes">`;
   if (G.ally){
@@ -154,6 +158,8 @@ function renderCombat(){
     if (f.st.marked) sts.push('Glowing');
     if (f.st.prone) sts.push('Prone');
     if (f.st.turned || f.st.fled) sts.push('Fled');
+    if (f.st.cover && f.hp > 0) sts.push(f.st.cover === 'full' ? 'Full cover' : COVER_NAME[f.st.cover].replace('cover', '') + 'cover');
+    if (f.st.shieldAC) sts.push('Shield');
     if (f.st.subdued) sts.push('Knocked out');
     else if (f.hp <= 0) sts.push('Defeated');
     html += `<button type="button" class="foe${down ? ' down' : ''}" data-foe="${i}" aria-pressed="${!down && i === c.target}" ${down ? 'disabled' : ''}>
@@ -165,6 +171,25 @@ function renderCombat(){
   });
   html += `</div>`;
 
+  if (c.mm){
+    /* Magic Missile: aim the darts */
+    const m = c.mm, used = Object.values(m.alloc).reduce((a, b) => a + b, 0);
+    html += `<div class="agroup"><h4>${esc(SPELLS[m.id].name)}: aim ${m.darts} darts</h4><p class="small" style="margin:0 0 6px">Put all the darts on one foe or split them up. They strike at the same moment and never miss. A foe behind full cover cannot be targeted.</p>`;
+    c.foes.forEach(f => {
+      if (f.hp <= 0 || f.st.fled || f.st.turned) return;
+      const blocked = f.st.cover === 'full', k = m.alloc[f.uid] || 0;
+      html += `<div class="item"><div class="it"><b>${esc(f.name)}</b> ${blocked ? '<span class="chip">Full cover: no line of sight</span>' : f.st.cover ? `<span class="chip">${COVER_NAME[f.st.cover]} (no effect on darts)</span>` : ''}</div>
+        <div class="row" style="flex-wrap:nowrap"><button type="button" class="mini" data-mm="${f.uid}" data-d="-1" ${k ? '' : 'disabled'}>One less</button><b style="min-width:2.2em;text-align:center">${k}</b><button type="button" class="mini" data-mm="${f.uid}" data-d="1" ${blocked || used >= m.darts ? 'disabled' : ''}>One more</button></div></div>`;
+    });
+    html += `<div class="actions" style="margin-top:8px"><button type="button" class="act magic" id="mmGo" ${used === m.darts ? '' : 'disabled'}><span class="k">1</span><span class="t"><b>Release the darts</b><small>${used} of ${m.darts} aimed${m.scroll ? ' · from a scroll' : ' · 1 slot'}</small></span></button>
+      <button type="button" class="act" id="mmCancel"><span class="k">2</span><span class="t"><b>Cancel</b><small>Choose a different action</small></span></button></div></div>`;
+    cb.innerHTML = html;
+    cb.querySelectorAll('[data-foe]').forEach(b => b.addEventListener('click', () => { c.target = +b.dataset.foe; render(); }));
+    cb.querySelectorAll('[data-mm]').forEach(b => b.addEventListener('click', () => mmAdjust(b.dataset.mm, +b.dataset.d)));
+    $('mmGo').addEventListener('click', mmRelease); keyActions.push($('mmGo'));
+    $('mmCancel').addEventListener('click', () => { c.mm = null; render(); }); keyActions.push($('mmCancel'));
+    return;
+  }
   const groups = [];
   const attacks = weapons().map((w, i) => ({label:w.name, sub:`${sgn(atkBonus(w))} to hit · ${w.dmg}${sgn(wAbil(w) + (w.bonus || 0))}${w.prof ? '' : ' · not proficient'}`, fn:() => playerAttack(i)}));
   groups.push(['Attack', attacks]);
@@ -173,8 +198,8 @@ function renderCombat(){
     const magic = [];
     const blocked = !armorTrained();
     known.cantrips.forEach(id => magic.push({label:SPELLS[id].name, sub:blocked ? 'Blocked by untrained armor' : 'Cantrip · ' + SPELLS[id].desc.split('.')[0], fn:() => castSpell(id), cls:'magic', off:blocked}));
-    known.spells.forEach(id => {
-      magic.push({label:SPELLS[id].name, sub:blocked ? 'Blocked by untrained armor' : `1 slot (${ch.slots.left} left)`, fn:() => castSpell(id), cls:'magic', off:ch.slots.left <= 0 || blocked});
+    known.spells.filter(id => SPELLS[id].kind !== 'reaction').forEach(id => {
+      magic.push({label:SPELLS[id].name, sub:blocked ? 'Blocked by untrained armor' : SPELLS[id].kind === 'missile' ? `1 slot (${ch.slots.left} left) · aim ${mmDarts(SPELLS[id])} darts` : `1 slot (${ch.slots.left} left)`, fn:() => castSpell(id), cls:'magic', off:ch.slots.left <= 0 || blocked});
       if (SPELLS[id].kind === 'heal' && G.ally && G.ally.hp < G.ally.max) magic.push({label:`${SPELLS[id].name} on ${G.ally.name}`, sub:`1 slot · can revive a downed companion`, fn:() => castSpell(id, true), cls:'magic', off:ch.slots.left <= 0 || blocked});
     });
     groups.push(['Spells', magic]);
@@ -183,6 +208,9 @@ function renderCombat(){
   if (hasFeat('secondWind')) other.push({label:'Second Wind', sub:`Bonus · heal 1d10+${ch.level} · ${ch.uses.secondWind || 0} left`, fn:secondWind, cls:'bonus', off:!ch.uses.secondWind || c.bonusUsed || ch.hp >= ch.maxHp});
   if (hasFeat('actionSurge')) other.push({label:'Action Surge', sub:`Free · act twice · ${ch.uses.actionSurge || 0} left`, fn:actionSurge, cls:'bonus', off:!ch.uses.actionSurge || c.surged});
   if (hasFeat('turnUndead')) other.push({label:'Turn Undead', sub:`Undead flee on a failed save · ${ch.uses.turnUndead || 0} left`, fn:turnUndead, off:!ch.uses.turnUndead || !alive().some(f => f.m.type === 'undead')});
+  const part = partialCover(c);
+  if (part && !c.pcover && !c.movedCover) other.push({label:`Move into ${COVER_NAME[part]}`, sub:`Free · +${coverAC(part)} AC and Dexterity saves`, fn:() => takeCover(false)});
+  if (part && c.pcover !== 'full') other.push({label:'Get behind full cover', sub:'Uses your turn · nothing can target you; melee foes may come around', fn:() => takeCover(true)});
   const cunning = hasFeat('cunningAction');
   other.push({label:'Hide', sub:(cunning ? 'Bonus · ' : '') + 'Stealth vs their Perception; next attack has advantage', fn:hideAction, cls:cunning ? 'bonus' : '', off:cunning && c.bonusUsed});
   other.push({label:'Dodge', sub:'Attacks on you have disadvantage', fn:dodgeAction});
@@ -211,6 +239,8 @@ function renderCombat(){
   });
   cb.innerHTML = html;
   cb.querySelectorAll('[data-foe]').forEach(b => b.addEventListener('click', () => { c.target = +b.dataset.foe; render(); }));
+  const shb = $('shieldBtn');
+  if (shb) shb.addEventListener('click', () => { c.autoShield = c.autoShield === false; G.char.autoShield = c.autoShield; log('sys', c.autoShield ? 'You will cast Shield as a reaction when it turns a hit into a miss.' : 'You will save your slots and not cast Shield.'); render(); });
   const sb = $('subdueBtn');
   if (sb) sb.addEventListener('click', () => { c.subdue = !c.subdue; log('sys', c.subdue ? 'You will strike to knock out, not kill. Melee blows that drop a humanoid leave it unconscious.' : 'You fight to kill.'); render(); });
   cb.querySelectorAll('[data-act]').forEach(b => { b.addEventListener('click', () => acts[+b.dataset.act].fn()); keyActions.push(b); });

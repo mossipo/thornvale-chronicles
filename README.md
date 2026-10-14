@@ -194,6 +194,21 @@ Add `noScale:true` to a fight to skip level scaling. The template keys are `comm
 * **Spell slots** are all treated as 1st level.
 * **Companions** recover fully on a short rest and get back up after a fight you win. Their healing spells come back on a long rest.
 * **Levels** go up to 20 with the SRD XP table, but class features stop at level 3, so high-tier jobs are tuned a little lighter than the books would make them.
+* **Cover.** Every fight has terrain:
+  * **Open ground:** no cover for anyone. The arena is always open ground.
+  * **Some cover:** half cover, +2 AC and Dexterity saves. This is the default outdoors and in town.
+  * **Lots of cover:** three-quarters cover, +5 AC and Dexterity saves. This applies in dungeons, ruins, sewers, the gaol, and the docks.
+  * **Full cover** is possible wherever there is any cover.
+
+  Moving into partial cover is free once a turn. Getting behind full cover uses your turn. Behind full cover, no attack, spell, or dart can target you and area spells miss you, but a melee foe can spend its attack coming around it. Attacking from full cover steps you out into partial cover. Thinking foes do the same: archers and casters take partial cover, and badly hurt foes may fall back behind full cover for a turn. A scene can set `cover: 'open'`, `'some'`, or `'lots'`, and so can a fight.
+* **Magic Missile.**
+  * **Aiming:** you aim three darts by splitting them among your foes however you like.
+  * **Damage:** one damage roll of 1d4 + 1 applies to every dart. All the darts strike at once and never miss.
+  * **Cover:** half or three-quarters cover does not stop the darts. Full cover does, because you need a line of sight.
+  * **What stops them:** a Shield spell (the Mage template casts it as a reaction twice a fight), a deflection charm such as the Brooch of Shielding, or immunity to spells.
+  * **Higher slots:** these add darts in the rules, but this game treats every slot as 1st level for now.
+* **Shield.** Wizards know Shield. The game casts it as your reaction when it would turn a hit into a miss, or when magic missile darts come at you. You can switch this off in a fight to save your slots.
+* **Immune to spells.** Monsters marked this way ignore every spell. That includes custom monsters: tick the box in the Bestiary, or paste a stat block with Limited Magic Immunity.
 * **Ghoul paralysis** lasts until you make a DC 10 Constitution save at the start of one of your turns. Elves are immune.
 * **People templates** follow the SRD stat blocks. A few things are simplified: spell slots become a limit per fight, area spells hit you and your companion, and support spells like Bless are left out.
 

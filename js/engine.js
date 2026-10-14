@@ -230,9 +230,11 @@ function doCheck(ch){
   let dc = baseDC, vs = `DC ${baseDC}`;
   if (ch.vsFoes){ dc = foesPP(ch.vsFoes); vs = `passive Perception ${dc}`; }
   if (ch.contest){ const o = d(20), t = o + ch.contest.mod; dc = t + 1; vs = `${esc(ch.contest.name)}'s d20 ${o} ${sgn(ch.contest.mod)} = <b>${t}</b>`; }
-  const r = d20test({mod:info.mod, adv, dis});
+  const bonus = ch.bonus || 0;
+  if (bonus) extra += ` +${bonus} from cover.`;
+  const r = d20test({mod:info.mod + bonus, adv, dis});
   const ok = r.total >= dc;
-  log('roll', `${info.label}${ch.contest ? ' contest' : ''}: ${diceHTML(r)} ${sgn(info.mod)} = <b>${r.total}</b> vs ${vs} <em class="${ok ? 'ok' : 'no'}">${ok ? 'Success' : 'Failure'}</em>${r.note}${extra}`);
+  log('roll', `${info.label}${ch.contest ? ' contest' : ''}: ${diceHTML(r)} ${sgn(info.mod + bonus)} = <b>${r.total}</b> vs ${vs} <em class="${ok ? 'ok' : 'no'}">${ok ? 'Success' : 'Failure'}</em>${r.note}${extra}`);
   return ok;
 }
 

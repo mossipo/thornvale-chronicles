@@ -650,7 +650,7 @@ jscene('mayor', 'j_may_2', {
       pass:{text:`There: a figure in grey, flat against the wall, a blade in each hand. The Grey Hand, the Faceless's own killer. You see them before they see you.`, fn:jset('spotted')},
       fail:{text:`Nothing. Then something.`, fn:jset('spot_fail')}}},
     {label:'Confront the Grey Hand', tag:'Boss', if:G => !jc('my2'),
-     fight:jf('my2', {4:[{key:'spy', name:'The Grey Hand', hp:40, boss:true}, 'cultist', 'cultist'], 6:[{key:'spy', name:'The Grey Hand', hp:60, boss:true}, 'cult_fanatic'], 8:[{key:'spy', name:'The Grey Hand', hp:70, boss:true}, 'cult_fanatic', 'cultist'], 11:[{key:'assassin', name:'The Grey Hand', boss:true}, 'cult_fanatic']},
+     fight:jf('my2', {4:[{key:'spy', name:'The Grey Hand', hp:40, boss:true, special:['mmimmune']}, 'cultist', 'cultist'], 6:[{key:'spy', name:'The Grey Hand', hp:60, boss:true, special:['mmimmune']}, 'cult_fanatic'], 8:[{key:'spy', name:'The Grey Hand', hp:70, boss:true, special:['mmimmune']}, 'cult_fanatic', 'cultist'], 11:[{key:'assassin', name:'The Grey Hand', boss:true, special:['mmimmune']}, 'cult_fanatic']},
        G => ({surprise:jon('spotted')(G) ? 'player' : null, win:{set:{faceless_lantern:true, cult_lore:true},
          text:`On the Grey Hand you find a letter sealed with a blank mask: "The Sunstone was the first. The Lantern is the second. The third waits where the river ends." The Faceless is collecting the old lights of the world.`}}))},
     DONE_OPT('Report to the Lady Mayor', null)

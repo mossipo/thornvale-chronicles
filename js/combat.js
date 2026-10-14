@@ -7,6 +7,77 @@
 /* =====================================================================
    COMBAT
    ===================================================================== */
+/* ---------- cover and line of sight ----------
+   Each fight has terrain: open (no cover), some (half cover), or lots
+   (three-quarters cover). Full cover is possible wherever there is any cover.
+   Half cover +2 AC and Dexterity saves, three-quarters +5. Full cover: no
+   attack, spell, or dart can reach you, but a melee foe can spend its
+   attack coming around it. */
+const COVER_AC = {half:2, three:5};
+const COVER_NAME = {half:'half cover', three:'three-quarters cover', full:'full cover'};
+const AREA_COVER = {town:'some', city:'some', wilds:'some', marsh:'some', jobwild:'some', boss:'some', well:'some',
+  tower:'lots', dungeon:'lots', crypt:'lots', gaol:'lots', sewer:'lots', ruins:'lots', docks:'lots'};
+const TERRAIN_TEXT = {open:'Open ground: there is no cover here for anyone.', some:'There is some cover here: half cover (+2 AC) or full cover.', lots:'There is plenty of cover here: three-quarters cover (+5 AC) or full cover.'};
+function terrainOf(cfg){
+  const sc = STORY[G.scene];
+  return cfg.cover || (sc && sc.cover) || (sc && AREA_COVER[sc.area]) || 'some';
+}
+const partialCover = (c=G.combat) => c && c.terrain === 'lots' ? 'three' : c && c.terrain === 'some' ? 'half' : null;
+const coverAC = k => COVER_AC[k] || 0;
+const foeAC = f => f.ac + coverAC(f.st.cover) + (f.st.shieldAC || 0);
+const smartFoe = f => (f.m.save.int || 0) >= -1 && !['beast', 'ooze', 'construct'].includes(f.m.type);
+const rangedStrike = a => !!(a.missile || a.save) || /bow|crossbow|thrown|javelin|bolt|flame|ray|sling|dart|missile/i.test(a.name);
+const foeHasRanged = f => routinesOf(f.m).some(r => (r.strikes || []).some(rangedStrike));
+const shieldUses = f => f.m.shieldUses || ((f.m.special || []).includes('shield') ? 2 : 0);
+/* Magic Missile makes three darts, plus one for each slot level above 1st.
+   This game treats every slot as 1st level, so it is three for now. */
+const mmDarts = (sp, slotLevel=1) => (sp.darts || 3) + Math.max(0, slotLevel - 1);
+function mmAdjust(uid, d){
+  const m = G.combat.mm, used = Object.values(m.alloc).reduce((a, b) => a + b, 0);
+  const cur = m.alloc[uid] || 0;
+  if (d > 0 && used >= m.darts) return;
+  m.alloc[uid] = Math.max(0, cur + d);
+  render();
+}
+function mmRelease(){
+  const m = G.combat.mm, used = Object.values(m.alloc).reduce((a, b) => a + b, 0);
+  if (used < m.darts) return notice(`Aim all ${m.darts} darts first (${used} aimed).`);
+  castSpell(m.id, false, m.scroll, Object.assign({}, m.alloc));
+}
+/* the hero's Shield spell, cast as a reaction */
+function canShield(){
+  const c = G.combat;
+  return !!(c && !c.reacted && c.autoShield !== false && G.char.slots && G.char.slots.left > 0 && armorTrained() && knownSpells().spells.includes('shield'));
+}
+function castShield(why){
+  const c = G.combat;
+  c.reacted = true; c.shieldUp = true; G.char.slots.left--;
+  log('good', `<b>Shield!</b> ${why} A shimmering barrier springs up: +5 AC until your next turn (1 slot, ${G.char.slots.left} left).`);
+}
+/* a foe's Shield spell or deflection, as its reaction */
+function foeShield(f, total){
+  if (f.st.parried || f.hp <= 0 || f.st.asleep) return false;
+  if (shieldUses(f) - ((f.st.used || {}).Shield || 0) <= 0) return false;
+  if (total !== null && total >= foeAC(f) + 5) return false;
+  f.st.used = f.st.used || {}; f.st.used.Shield = (f.st.used.Shield || 0) + 1;
+  f.st.parried = true; f.st.shieldAC = 5;
+  log('sys', `${esc(f.name)} snaps up a <b>Shield</b> spell! ${total === null ? 'Your darts burst harmlessly against it.' : '+5 AC turns your hit into a miss.'}`);
+  return true;
+}
+const spellImmune = f => (f.m.special || []).includes('spellimmune');
+function stepOutOfCover(){
+  const c = G.combat;
+  if (c.pcover !== 'full') return;
+  c.pcover = partialCover(c);
+  log('sys', `You step out from full cover${c.pcover ? ' into ' + COVER_NAME[c.pcover] : ''} to act.`);
+}
+function takeCover(full){
+  const c = G.combat;
+  if (full){ c.pcover = 'full'; log('sys', 'You use your turn to get behind full cover. No attack, spell, or dart can reach you there, but melee foes may come around it.'); endAction(); return; }
+  c.pcover = partialCover(c); c.movedCover = true;
+  log('sys', `You move into ${COVER_NAME[c.pcover]}: +${coverAC(c.pcover)} AC and Dexterity saves. Moving costs you nothing; you can still act.`);
+  render();
+}
 function startCombat(cfg){
   /* tiers: {1:[...], 3:[...], 5:[...]} picks the group for the hero's level */
   if (cfg.tiers){
@@ -31,7 +102,8 @@ function startCombat(cfg){
   const counts = {};
   const foes = cfg.foes.map((f, i) => {
     const spec = typeof f === 'string' ? {key:f} : f;
-    const m = MONSTERS[spec.key];
+    let m = MONSTERS[spec.key];
+    if (spec.special) m = Object.assign({}, m, {special:[...new Set([...(m.special || []), ...spec.special])]});
     const hp = spec.hp || m.hp;
     const name = spec.name || m.name;
     counts[name] = (counts[name] || 0) + 1;
@@ -44,8 +116,9 @@ function startCombat(cfg){
   if (wound) foes.forEach(f => { if (f.boss){ f.hp = Math.max(1, Math.round(f.max * (1 - wound))); log('sys', `${esc(f.name)} still carries the wounds you gave it last time.`); } });
   foes.forEach(f => { if (counts[f.base] > 1){ const k = foes.filter(x => x.base === f.base).indexOf(f); f.name = `${f.base} ${'ABCDEF'[k]}`; } });
   G.mode = 'combat'; G.choices = null;
-  const c = G.combat = {foes, cfg, round:1, target:0, phaseIdx:0, order:null, dodge:false, hidden:false, extra:false, bonusUsed:false, sneakUsed:false, surged:false, subdue:false, initial:foes.length, fled:false};
+  const c = G.combat = {terrain:terrainOf(cfg), pcover:null, autoShield:G.char.autoShield !== false, foes, cfg, round:1, target:0, phaseIdx:0, order:null, dodge:false, hidden:false, extra:false, bonusUsed:false, sneakUsed:false, surged:false, subdue:false, initial:foes.length, fled:false};
   log('round', `Combat: ${foes.map(f => esc(f.name)).join(', ')}`);
+  log('sys', TERRAIN_TEXT[c.terrain]);
   const pi = d20test({mod:am('dex')});
   const fmod = Math.max(...foes.map(f => f.m.init));
   const fi = d(20) + fmod;
@@ -99,6 +172,8 @@ function runCombat(){
       if (c.round === 1 && c.playerSkip){ advancePhase(); continue; }
       c.dodge = false; c.bonusUsed = false; c.sneakUsed = false; c.extra = false; c.surged = false;
       if (c.prone){ c.prone = false; log('sys', 'You get back on your feet.'); }
+      if (c.shieldUp) log('sys', 'Your Shield fades.');
+      c.reacted = false; c.shieldUp = false; c.movedCover = false; c.mm = null;
       if (c.paralyzed){
         if (doCheck({save:'con', dc:c.paralyzed})){ c.paralyzed = 0; log('good', 'Feeling floods back into your limbs. You can move again.'); }
         else { log('bad', 'You are still paralyzed and lose your turn.'); allyTurn(); if (!alive().length){ winCombat(); return; } advancePhase(); continue; }
@@ -125,7 +200,12 @@ function enemyPhase(){
     if (G.mode !== 'combat') return;
     if (f.hp <= 0 || f.st.turned || f.st.fled) continue;
     if (f.st.asleep){ log('sys', `${esc(f.name)} snores.`); continue; }
-    f.st.parried = false;
+    f.st.parried = false; f.st.shieldAC = 0;
+    if (f.st.cover === 'full'){ f.st.cover = partialCover(c); log('sys', `${esc(f.name)} comes out from behind full cover${f.st.cover ? ' into ' + COVER_NAME[f.st.cover] : ''}.`); }
+    else if (partialCover(c) && smartFoe(f) && !f.st.asleep && !f.st.prone){
+      if (!f.boss && f.hp <= f.max / 2 && Math.random() < 0.3){ f.st.cover = 'full'; log('sys', `${esc(f.name)} falls back behind full cover and gives up its attack to stay alive.`); continue; }
+      if (!f.st.cover && foeHasRanged(f) && Math.random() < 0.5){ f.st.cover = partialCover(c); log('sys', `${esc(f.name)} slips into ${COVER_NAME[f.st.cover]} (+${coverAC(f.st.cover)} AC).`); }
+    }
     if (f.st.prone){ f.st.prone = false; log('sys', `${esc(f.name)} scrambles back to its feet.`); }
     if (f.m.special.includes('nimble') && f.hp <= f.max / 2 && !f.st.hidden && Math.random() < .35){
       f.st.hidden = true; log('sys', `${esc(f.name)} ducks behind cover. Your next attack on it has disadvantage.`); continue;
@@ -163,18 +243,20 @@ function enemyAttack(f){
     log('bad', `${esc(f.name)} casts ${esc(r.name)}${t === f ? '' : ' on ' + esc(t.name)}: ${t === f ? 'it' : esc(t.name)} regains <b>${t.hp - before}</b> hit points (${dr.text}).`);
     return;
   }
+  if (f.st.cover && f.st.cover !== 'full' && (r.strikes || []).some(s => !rangedStrike(s))){ f.st.cover = null; log('sys', `${esc(f.name)} leaves cover to close in.`); }
   if (f.m.special.includes('reckless') && !f.st.reckless){ f.st.reckless = true; log('sys', `${esc(f.name)} fights recklessly: its attacks have advantage, and so do yours against it.`); }
   const st = {martialUsed:false, sneakUsed:false};
   for (const s of r.strikes){
     if (G.mode !== 'combat') return;
     if (!usesLeft(f, s)) continue;
     useUp(f, s);
-    if (s.save) enemySaveStrike(f, s); else enemyStrike(f, s, st);
+    if (s.missile) enemyMissile(f, s); else if (s.save) enemySaveStrike(f, s); else enemyStrike(f, s, st);
   }
 }
 /* damage that lands on the hero or the companion */
 function hurtPlayer(n, type, why){
   if (RACES[G.char.race].resist && RACES[G.char.race].resist.includes(type)){ n = Math.floor(n / 2); why += ', halved by your resilience'; }
+  else if (type === 'force' && has('brooch')){ n = Math.floor(n / 2); why += ', halved by your Brooch of Shielding'; }
   G.char.hp -= n;
   log('bad', `You take <b>${n}</b> ${type} damage (${why}).`);
   if (G.char.hp <= 0 && G.combat && G.combat.cfg.spar){ endSpar(false); return true; }
@@ -189,13 +271,33 @@ function hurtAlly(n, type, why){
 const cap = t => t.charAt(0).toUpperCase() + t.slice(1);
 const allySaveRoll = () => d(20) + 1;
 /* a spell or effect that calls for a saving throw instead of an attack roll */
+/* an enemy's Magic Missile: darts never miss, but cover, Shield, and a Brooch of Shielding stop them */
+function enemyMissile(f, s){
+  const c = G.combat, n = s.missile, dr = rollDice(s.dmg);
+  const youOK = c.pcover !== 'full', allyOK = allyUp();
+  if (!youOK && !allyOK){ log('sys', `${esc(f.name)} readies Magic Missile, but has no line of sight to anyone.`); return; }
+  let toYou = 0, toAlly = 0;
+  for (let i = 0; i < n; i++){ if (youOK && (!allyOK || Math.random() < 0.65)) toYou++; else toAlly++; }
+  log('sys', `${esc(f.name)} casts Magic Missile: ${n} glowing darts, ${dr.text} force each. They never miss.`);
+  if (toAlly) hurtAlly(toAlly * dr.total, 'force', `${toAlly} dart${toAlly > 1 ? 's' : ''} x ${dr.total}`);
+  if (!toYou) return;
+  if (has('brooch')){ log('good', `Your Brooch of Shielding drinks in ${toYou} dart${toYou > 1 ? 's' : ''}. No harm done.`); return; }
+  if (canShield()){ castShield(`The darts burst against it.`); return; }
+  hurtPlayer(toYou * dr.total, 'force', `${toYou} dart${toYou > 1 ? 's' : ''} x ${dr.total}`);
+}
 function enemySaveStrike(f, s){
+  const c = G.combat;
   const area = s.half;
   const dr = rollDice(s.dmg);
-  const atAlly = !area && allyUp() && Math.random() < 0.4;
+  let atAlly = !area && allyUp() && Math.random() < 0.4;
+  if (!area && !atAlly && c.pcover === 'full'){
+    if (allyUp()) atAlly = true;
+    else { log('sys', `${esc(f.name)} has no line of sight to you for ${esc(s.name)}.`); return; }
+  }
   log('sys', `${esc(f.name)} casts ${esc(s.name)}${area ? '!' : ' at ' + (atAlly ? esc(G.ally.name) : 'you') + '.'}`);
   const hitsAlly = area ? allyUp() : atAlly;
-  const hitsYou = area || !atAlly;
+  const hitsYou = (area || !atAlly) && !(area && c.pcover === 'full');
+  if (area && c.pcover === 'full') log('good', `Your full cover shields you completely from the ${esc(s.name)}.`);
   let n = dr.total + Math.max(0, f.bonusDmg || 0);
   if (hitsAlly){
     const sv = allySaveRoll(), ok = sv >= s.dc;
@@ -204,7 +306,7 @@ function enemySaveStrike(f, s){
     if (m > 0) hurtAlly(m, s.type, `${esc(s.name)} ${dr.text}`);
   }
   if (hitsYou){
-    const ok = doCheck({save:s.save, dc:s.dc});
+    const ok = doCheck({save:s.save, dc:s.dc, bonus:s.save === 'dex' ? coverAC(c.pcover) : 0});
     const m = ok ? (s.half ? Math.floor(n / 2) : 0) : n;
     if (m > 0) hurtPlayer(m, s.type, `${esc(s.name)} ${dr.text}${ok ? ', halved' : ''}`);
     else log('good', `You avoid the ${esc(s.name)}.`);
@@ -214,8 +316,17 @@ function enemyStrike(f, a, st){
   const c = G.combat;
   if (typeof st !== 'object') st = {martialUsed:!!st, sneakUsed:false};
   const allies = c.foes.some(o => o !== f && o.hp > 0 && !o.st.asleep && !o.st.turned && !o.st.fled);
-  const atAlly = allyUp() && Math.random() < 0.4;
-  const tAC = atAlly ? ALLIES[G.ally.key].ac : ac();
+  let atAlly = allyUp() && Math.random() < 0.4;
+  if (!atAlly && c.pcover === 'full'){
+    if (!rangedStrike(a)){
+      c.pcover = partialCover(c);
+      log('sys', `${esc(f.name)} comes around your cover. You no longer have full cover${c.pcover ? `, only ${COVER_NAME[c.pcover]}` : ''}.`);
+      return st.martialUsed;
+    }
+    if (allyUp()) atAlly = true;
+    else { log('sys', `${esc(f.name)} has no line of sight to you and holds its ${a.name}.`); return st.martialUsed; }
+  }
+  let tAC = atAlly ? ALLIES[G.ally.key].ac : ac() + coverAC(c.pcover) + (c.shieldUp ? 5 : 0);
   let adv = false, dis = false;
   if (f.m.special.includes('pack') && (allies || allyUp())) adv = adv || allies;
   if (f.st.hidden){ adv = true; f.st.hidden = false; }
@@ -227,7 +338,8 @@ function enemyStrike(f, a, st){
   const r = monsterD20(adv, dis);
   const toHit = a.toHit + (f.bonusHit || 0);
   const total = r.nat + toHit;
-  const hit = r.nat === 20 || (r.nat !== 1 && total >= tAC);
+  let hit = r.nat === 20 || (r.nat !== 1 && total >= tAC);
+  if (hit && !atAlly && r.nat !== 20 && total < tAC + 5 && canShield()){ castShield(`The ${esc(a.name)} would have hit you.`); tAC += 5; hit = false; }
   const crit = r.nat === 20 || (hit && f.m.special.includes('assassinate') && c.round === 1 && c.playerSkip && !atAlly);
   log('roll', `${esc(f.name)} ${a.name} at ${atAlly ? esc(G.ally.name) : 'you'}: ${diceHTML(r)} ${sgn(toHit)} = <b>${total}</b> vs AC ${tAC} <em class="${hit ? 'no' : 'ok'}">${crit ? 'Critical hit!' : hit ? 'Hit' : 'Miss'}</em>`);
   if (!hit) return st.martialUsed;
@@ -276,8 +388,9 @@ function parries(f, total, crit, melee){
 function foeSave(f, a, spell){
   const mr = spell && f.m.special.includes('magicres');
   const r = monsterD20(mr, false);
-  const total = r.nat + (f.m.save[a] || 0) + (f.bonusHit > 0 ? f.bonusHit : 0);
-  return {total, text:`${diceHTML(r)} ${sgn(f.m.save[a] || 0)} = <b>${total}</b>${mr ? ' (Magic Resistance)' : ''}`};
+  const cv = a === 'dex' ? coverAC(f.st.cover) : 0;
+  const total = r.nat + (f.m.save[a] || 0) + (f.bonusHit > 0 ? f.bonusHit : 0) + cv;
+  return {total, text:`${diceHTML(r)} ${sgn(f.m.save[a] || 0)}${cv ? ` +${cv} cover` : ''} = <b>${total}</b>${mr ? ' (Magic Resistance)' : ''}`};
 }
 function target(){
   const c = G.combat;
@@ -331,11 +444,18 @@ function allyTurn(){
   }
 }
 function allyStrike(a, f){
+  const ranged = /bow|sling|crossbow/i.test(a.attack.name);
+  if (f.st.cover === 'full'){
+    const other = alive().find(x => x.st.cover !== 'full');
+    if (ranged && other) f = other;
+    else if (ranged){ log('sys', `${esc(G.ally.name)} has no clear shot and waits.`); return; }
+    else { f.st.cover = partialCover(); log('sys', `${esc(G.ally.name)} goes around the cover after ${esc(f.name)}.`); }
+  }
   const adv = !!f.st.asleep || !!f.st.prone || !!f.st.marked || !!f.st.reckless;
   const r = monsterD20(adv, false);
   const total = r.nat + a.attack.toHit, crit = r.nat === 20;
-  let hit = crit || (r.nat !== 1 && total >= f.ac);
-  log('roll', `${esc(G.ally.name)} ${a.attack.name} at ${esc(f.name)}: ${diceHTML(r)} ${sgn(a.attack.toHit)} = <b>${total}</b> vs AC ${f.ac} <em class="${hit ? 'ok' : 'no'}">${crit ? 'Critical hit!' : hit ? 'Hit' : 'Miss'}</em>`);
+  let hit = crit || (r.nat !== 1 && total >= foeAC(f));
+  log('roll', `${esc(G.ally.name)} ${a.attack.name} at ${esc(f.name)}: ${diceHTML(r)} ${sgn(a.attack.toHit)} = <b>${total}</b> vs AC ${foeAC(f)} <em class="${hit ? 'ok' : 'no'}">${crit ? 'Critical hit!' : hit ? 'Hit' : 'Miss'}</em>`);
   f.st.marked = false;
   if (hit && parries(f, total, crit, !/bow|sling/i.test(a.attack.name))) hit = false;
   if (!hit) return;
@@ -353,7 +473,7 @@ function startSpar(key, opt){
   G.choices = null; G.shop = null; G.forge = false;
   log('you', opt.prize ? `Step into the arena against ${esc(opt.name || MONSTERS[key].name)}` : `Practice bout against a ${esc(MONSTERS[key].name.toLowerCase())}`);
   log('sys', `Blunted weapons and a referee. Nobody dies, no XP is earned, and your hit points are restored when the bout ends.${opt.prize ? ` The purse is ${opt.prize} gold.` : ''}`);
-  startCombat({foes:[opt.name ? {key, name:opt.name} : key], spar:true, prize:opt.prize || 0, sparHP:G.char.hp, sparAlly:G.ally ? G.ally.hp : null, noScale:true});
+  startCombat({foes:[opt.name ? {key, name:opt.name} : key], spar:true, cover:'open', prize:opt.prize || 0, sparHP:G.char.hp, sparAlly:G.ally ? G.ally.hp : null, noScale:true});
   return true;
 }
 function endSpar(won){
@@ -399,15 +519,22 @@ function winCombat(){
 function playerAttack(i){
   const c = G.combat, w = weapons()[i], f = target();
   if (!f || !w) return;
+  if (f.st.cover === 'full'){
+    if (!w.melee){ notice(`${f.name} is behind full cover. You have no line of sight for a ranged attack. Pick another target, or close in with a melee weapon.`); return; }
+    f.st.cover = partialCover(c);
+    log('sys', `You go around the cover to reach ${esc(f.name)}${f.st.cover ? `, which still has ${COVER_NAME[f.st.cover]}` : ''}.`);
+  }
+  stepOutOfCover();
   const adv = c.hidden || !!f.st.marked || !!f.st.asleep || (w.melee && !!f.st.prone) || !!f.st.reckless;
   const dis = !!f.st.hidden || (!w.melee && !!f.st.prone) || !armorTrained();
   const bonus = atkBonus(w);
   const r = d20test({mod:bonus, adv, dis});
   const nat20 = r.nat >= (hasFeat('improvedCritical') ? 19 : 20);
-  let hit = nat20 || (r.nat !== 1 && r.total >= f.ac);
+  let hit = nat20 || (r.nat !== 1 && r.total >= foeAC(f));
   const crit = nat20 || (hit && f.st.asleep && w.melee);
-  log('roll', `${w.name} at ${esc(f.name)}: ${diceHTML(r)} ${sgn(bonus)} = <b>${r.total}</b> vs AC ${f.ac} <em class="${hit ? 'ok' : 'no'}">${crit ? 'Critical hit!' : hit ? 'Hit' : 'Miss'}</em>${r.note}`);
+  log('roll', `${w.name} at ${esc(f.name)}: ${diceHTML(r)} ${sgn(bonus)} = <b>${r.total}</b> vs AC ${foeAC(f)}${f.st.cover ? ` (${COVER_NAME[f.st.cover]})` : ''} <em class="${hit ? 'ok' : 'no'}">${crit ? 'Critical hit!' : hit ? 'Hit' : 'Miss'}</em>${r.note}`);
   c.hidden = false; f.st.marked = false; f.st.hidden = false;
+  if (hit && !nat20 && foeShield(f, r.total)) hit = false;
   if (hit && parries(f, r.total, crit, w.melee)) hit = false;
   if (hit){
     const dr = rollDice(w.dmg, crit);
@@ -419,8 +546,19 @@ function playerAttack(i){
   }
   endAction();
 }
-function castSpell(id, onAlly, scroll){
+function castSpell(id, onAlly, scroll, alloc){
   const c = G.combat, sp = SPELLS[id];
+  const tgt = target();
+  if ((sp.kind === 'attack' || sp.kind === 'save') && tgt && tgt.st.cover === 'full'){ notice(`${tgt.name} is behind full cover. You have no line of sight for ${sp.name}. Pick another target.`); return; }
+  if (sp.kind === 'missile' && !alloc){
+    if (!scroll && (!armorTrained() || G.char.slots.left <= 0)) return;
+    c.mm = {id, scroll:scroll || null, darts:mmDarts(sp), alloc:{}};
+    const first = alive().find(x => x === tgt && x.st.cover !== 'full') || alive().find(x => x.st.cover !== 'full');
+    if (first) c.mm.alloc[first.uid] = c.mm.darts;
+    render(); return;
+  }
+  c.mm = null;
+  stepOutOfCover();
   if (scroll){
     if (!has(scroll)) return;
     takeItem(scroll); G._scroll = true;
@@ -430,34 +568,49 @@ function castSpell(id, onAlly, scroll){
   }
   const f = target();
   log('sys', scroll ? `You read a scroll of ${sp.name}. The parchment crumbles to ash.` : `You cast ${sp.name}${sp.level ? ' (1 slot)' : ''}.`);
-  if (sp.kind === 'attack'){
+  if ((sp.kind === 'attack' || sp.kind === 'save') && spellImmune(f)){
+    log('sys', `The ${sp.name} washes over ${esc(f.name)} and does nothing. It is immune to spells.`);
+  } else if (sp.kind === 'attack'){
     const adv = c.hidden || !!f.st.marked || !!f.st.asleep || !!f.st.reckless, dis = !!f.st.hidden || !!f.st.prone;
     const r = d20test({mod:spellAtk(), adv, dis});
-    const crit = r.nat === 20, hit = crit || (r.nat !== 1 && r.total >= f.ac);
-    log('roll', `${sp.name} at ${esc(f.name)}: ${diceHTML(r)} ${sgn(spellAtk())} = <b>${r.total}</b> vs AC ${f.ac} <em class="${hit ? 'ok' : 'no'}">${crit ? 'Critical hit!' : hit ? 'Hit' : 'Miss'}</em>${r.note}`);
+    const crit = r.nat === 20;
+    let hit = crit || (r.nat !== 1 && r.total >= foeAC(f));
+    log('roll', `${sp.name} at ${esc(f.name)}: ${diceHTML(r)} ${sgn(spellAtk())} = <b>${r.total}</b> vs AC ${foeAC(f)}${f.st.cover ? ` (${COVER_NAME[f.st.cover]})` : ''} <em class="${hit ? 'ok' : 'no'}">${crit ? 'Critical hit!' : hit ? 'Hit' : 'Miss'}</em>${r.note}`);
     c.hidden = false; f.st.marked = false; f.st.hidden = false;
+    if (hit && !crit && foeShield(f, r.total)) hit = false;
     if (hit){
       const dr = rollDice(sp.dmg, crit);
-      damageFoe(f, dr.total, sp.type, `${sp.name} ${dr.text}`);
+      damageFoe(f, dr.total, sp.type, `${sp.name} ${dr.text}`, {magic:true});
       if (sp.mark && f.hp > 0){ f.st.marked = true; log('sys', `${esc(f.name)} glows with light. Your next attack on it has advantage.`); }
     }
   } else if (sp.kind === 'save'){
     const sv = foeSave(f, sp.save, true);
     const ok = sv.total >= spellDC();
     log('roll', `${esc(f.name)} ${ABIL_NAME[sp.save]} save: ${sv.text} vs DC ${spellDC()} <em class="${ok ? 'no' : 'ok'}">${ok ? 'Saved' : 'Failed'}</em>`);
-    if (!ok){ const dr = rollDice(sp.dmg); damageFoe(f, dr.total, sp.type, `${sp.name} ${dr.text}`); }
+    if (!ok){ const dr = rollDice(sp.dmg); damageFoe(f, dr.total, sp.type, `${sp.name} ${dr.text}`, {magic:true}); }
   } else if (sp.kind === 'missile'){
-    for (let i = 0; i < sp.darts; i++){
-      const t = c.foes[c.target] && c.foes[c.target].hp > 0 ? c.foes[c.target] : target();
-      if (!t) break;
-      const dr = rollDice(sp.dmg);
-      damageFoe(t, dr.total, sp.type, `Dart ${i + 1} ${dr.text}`);
-    }
+    /* Magic Missile: every dart hits automatically. One damage roll is shared by all
+       the darts, and they strike at the same moment. Cover short of full cover
+       does not stop them. Full cover, a Shield spell, a deflecting brooch, or
+       immunity to spells does. */
+    const dr = rollDice(sp.dmg), total = Object.values(alloc).reduce((a, b) => a + b, 0);
+    log('roll', `${sp.name}: ${total} dart${total > 1 ? 's' : ''} of force, ${dr.text} each. They never miss.`);
+    Object.entries(alloc).forEach(([uid, k]) => {
+      const t = c.foes.find(x => String(x.uid) === String(uid));
+      if (!t || !k) return;
+      const lbl = `${k} dart${k > 1 ? 's' : ''}`, The = k > 1 ? `The ${k} darts` : 'The dart', v = (one, many) => k > 1 ? many : one;
+      if (t.hp <= 0 || t.st.fled || t.st.turned){ log('sys', `${The} meant for ${esc(t.name)} ${v('winks', 'wink')} out.`); return; }
+      if (t.st.cover === 'full'){ log('sys', `${The} cannot find ${esc(t.name)} behind full cover and ${v('fades', 'fade')} away.`); return; }
+      if (spellImmune(t)){ log('sys', `${The} ${v('fizzles', 'fizzle')} against ${esc(t.name)}. It is immune to spells.`); return; }
+      if ((t.m.special || []).includes('mmimmune')){ log('sys', `Something on ${esc(t.name)} drinks in ${The.toLowerCase()}. A deflection charm: no effect.`); return; }
+      if (foeShield(t, null)) return;
+      damageFoe(t, k * dr.total, sp.type, `${sp.name}, ${lbl} x ${dr.total}`, {magic:true});
+    });
   } else if (sp.kind === 'sleep'){
     let pool = rollDice(sp.pool);
     log('roll', `Sleep: ${pool.text} = <b>${pool.total}</b> hit points of creatures`);
     let left = pool.total;
-    const order = alive().filter(x => !x.st.asleep && x.m.type !== 'undead').sort((a, b) => a.hp - b.hp);
+    const order = alive().filter(x => !x.st.asleep && x.m.type !== 'undead' && !spellImmune(x) && x.st.cover !== 'full').sort((a, b) => a.hp - b.hp);
     for (const x of order){
       if (x.hp > left) break;
       left -= x.hp; x.st.asleep = true;
@@ -468,6 +621,8 @@ function castSpell(id, onAlly, scroll){
     const dr = rollDice(sp.dmg);
     log('roll', `${sp.name}: ${dr.text} = <b>${dr.total}</b>`);
     alive().forEach(x => {
+      if (x.st.cover === 'full'){ log('sys', `${esc(x.name)} is safe behind full cover.`); return; }
+      if (spellImmune(x)){ log('sys', `${esc(x.name)} is immune to spells.`); return; }
       const sv = foeSave(x, sp.save, true), ok = sv.total >= spellDC();
       const ev = sp.save === 'dex' && x.m.special.includes('evasion');
       log('roll', `${esc(x.name)} ${ABIL_NAME[sp.save]} save: ${sv.text} vs DC ${spellDC()} <em class="${ok ? 'no' : 'ok'}">${ok ? (ev ? 'Evasion, no damage' : 'Half damage') : (ev ? 'Failed, Evasion halves it' : 'Failed')}</em>`);

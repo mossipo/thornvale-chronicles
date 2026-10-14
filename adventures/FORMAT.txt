@@ -57,7 +57,9 @@ Ids are one word: letters, numbers, _ or -.
   attack: Bite +5 1d6+3 piercing      (one line per attack)
   multi: 2           attacks per turn
   saves: str+1 dex+3 con+1 int-4 wis+0 cha-3
-  special: pack, nimble, martial
+  special: pack, nimble, martial, magicres, spellimmune, mmimmune, shield
+                     (spellimmune: no spell affects it; mmimmune: magic missile
+                      does nothing; shield: casts Shield as a reaction twice a fight)
   vuln: radiant       immune: poison
   Fights can also use core monsters (goblin, wolf, skeleton, orc...) and
   anything in your Bestiary, by id or by name.
